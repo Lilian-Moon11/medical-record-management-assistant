@@ -54,6 +54,9 @@ def _b64e(b: bytes) -> str:
 def _b64d(s: str) -> bytes:
     return base64.urlsafe_b64decode(s.encode("utf-8"))
 
+def generate_recovery_key_b64() -> str:
+    """Generate a new recovery key (base64) WITHOUT persisting anything."""
+    return _b64e(os.urandom(RECOVERY_KEY_BYTES))
 
 def _derive_wrap_key(secret: bytes, salt: bytes, iters: int) -> bytes:
     kdf = PBKDF2HMAC(
@@ -155,16 +158,22 @@ def unlock_db_key_with_recovery(db_path: str, recovery_key_b64: str) -> bytes:
         raise RuntimeError("Invalid recovery key.") from ex
 
 
-def rotate_recovery_key(db_path: str, dmk_raw: bytes) -> str:
+def rotate_recovery_key(db_path: str, dmk_raw: bytes, new_recovery_key_b64: Optional[str] = None) -> str:
     """
-    Generate a new recovery key and re-wrap the DMK.
-    Vault must already be unlocked.
+    Rotate recovery key by re-wrapping the DMK.
+    If new_recovery_key_b64 is provided, uses that exact key (commit step).
+    Otherwise generates a new recovery key.
     """
     kb = load_keybag(db_path)
     if kb is None:
         raise RuntimeError("No keybag found.")
 
-    new_recovery = os.urandom(RECOVERY_KEY_BYTES)
+    # Use staged key if provided; otherwise generate one
+    if new_recovery_key_b64:
+        new_recovery = _b64d(new_recovery_key_b64)
+    else:
+        new_recovery = os.urandom(RECOVERY_KEY_BYTES)
+
     salt = _b64d(kb["kdf"]["salt_b64"])
     iters = kb["kdf"]["iterations"]
 

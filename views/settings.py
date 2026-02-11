@@ -25,8 +25,8 @@
 
 import flet as ft
 from database import get_setting, set_setting
-from utils import s, show_snack
-from crypto.keybag import verify_password, rotate_recovery_key
+from utils import s, show_snack, run_async, copy_with_snack
+from crypto.keybag import verify_password, rotate_recovery_key, generate_recovery_key_b64
 
 
 def get_settings_view(page: ft.Page, apply_settings_callback):
@@ -67,7 +67,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         # Trigger the visual update in main.py
         apply_settings_callback()
         
-        show_snack(page, "Settings saved.", "green")
+        show_snack(page, "Settings saved.", ft.Colors.GREEN)
 
     def reset_settings(e):
         # Reset DB
@@ -83,7 +83,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
         # Trigger visual update
         apply_settings_callback()
-        show_snack(page, "Defaults restored.", "blue")
+        show_snack(page, "Defaults restored.", ft.Colors.BLUE)
 
     # Rotate Recovery Key
     current_pwd_field = ft.TextField(
@@ -117,13 +117,34 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 disabled=True,
             )
 
-            async def copy_key(_):
+            def copy_key(_):
+                # Immediate UI proof (no console needed)
+                page._new_rk_status.value = "Copying..."
+                page._new_rk_status.color = ft.Colors.GREY
                 try:
-                    await ft.Clipboard().set(page._new_rk_value)
-                    show_snack(page, "Recovery key copied to clipboard.", "green")
-                except Exception as ex:
-                    print("CLIPBOARD FAIL:", ex)
-                    show_snack(page, "Could not copy to clipboard on this platform.", "orange")
+                    page._new_rk_dlg.update()
+                except Exception:
+                    pass
+                page.update()
+
+                async def _do():
+                    ok = await copy_with_snack(
+                        page,
+                        page._new_rk_value,
+                        ok_message="Recovery key copied to clipboard.",
+                        fail_message="Could not copy to clipboard on this platform.",
+                    )
+
+                    page._new_rk_status.value = "Copied to clipboard." if ok else "Copy failed on this platform."
+                    page._new_rk_status.color = ft.Colors.GREEN if ok else ft.Colors.ORANGE
+
+                    try:
+                        page._new_rk_dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+
+                run_async(page, _do())
 
             def close(_=None):
                 if not page._new_rk_saved_check.value:
@@ -151,7 +172,61 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 page.update()
 
             page._new_rk_saved_check.on_change = on_check
-            page._new_rk_done_btn.on_click = close
+            def commit_and_close(_=None):
+                # Don't allow closing without checkbox
+                if not page._new_rk_saved_check.value:
+                    page._new_rk_status.value = "Please confirm you saved it before closing."
+                    try:
+                        page._new_rk_dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+                    return
+
+                staged = getattr(page, "_pending_recovery_rotation_key", None)
+                if not staged:
+                    page._new_rk_status.value = "No pending rotation found."
+                    page._new_rk_status.color = ft.Colors.RED
+                    page.update()
+                    return
+
+                try:
+                    # Commit rotation now using the already-shown key
+                    committed = rotate_recovery_key(page.db_path, page.db_key_raw, new_recovery_key_b64=staged)
+
+                    # Sanity: committed should match staged (it will)
+                    page.recovery_key_first_run = committed
+
+                    # Now clear the password field (safe after commit)
+                    current_pwd_field.value = ""
+                    try:
+                        current_pwd_field.update()
+                    except Exception:
+                        pass
+
+                    # Clear pending staged state
+                    page._pending_recovery_rotation_key = None
+
+                    show_snack(page, "Recovery key rotated.", ft.Colors.GREEN)
+
+                    # Close dialog
+                    page._new_rk_dlg.open = False
+                    try:
+                        page._new_rk_dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+
+                except Exception as ex:
+                    page._new_rk_status.value = str(ex)
+                    page._new_rk_status.color = ft.Colors.RED
+                    try:
+                        page._new_rk_dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+
+            page._new_rk_done_btn.on_click = commit_and_close
 
             page._new_rk_dlg = ft.AlertDialog(
                 modal=False,
@@ -162,6 +237,16 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                             "Save this recovery key somewhere safe.\n"
                             "If you lose both your password and this key, the vault cannot be recovered."
                         ),
+                        ft.Container(
+                            padding=10,
+                            border=ft.Border.all(1, ft.Colors.ORANGE),
+                            border_radius=6,
+                            content=ft.Text(
+                                "Rotation is NOT final until you click 'I saved it.'\n"
+                                "If you close this dialog before confirming, the old recovery key remains valid.",
+                                color=ft.Colors.ORANGE,
+                            ),
+                        ),          
                         ft.Container(
                             padding=10,
                             border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
@@ -208,13 +293,12 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
     def rotate_recovery_click(e):
         # Guardrails
         if not getattr(page, "db_path", None) or not getattr(page, "db_key_raw", None):
-            show_snack(page, "Vault not loaded; cannot rotate recovery key.", "red")
-            return
+            show_snack(page, "Vault not loaded; cannot rotate recovery key.", ft.Colors.RED)
             return
 
         pwd = (current_pwd_field.value or "").strip()
         if not pwd:
-            show_snack(page, "Enter your current database password to rotate the recovery key.", "orange")
+            show_snack(page, "Enter your current database password to rotate the recovery key.", ft.Colors.ORANGE)
             return
 
         # Create dialog once and reuse it
@@ -239,21 +323,12 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     if not verify_password(page.db_path, pwd_now):
                         raise RuntimeError("Incorrect password.")
 
-                    new_key = rotate_recovery_key(page.db_path, page.db_key_raw)
+                    staged_key = generate_recovery_key_b64()
+                    page._pending_recovery_rotation_key = staged_key
 
-                    # Clear the password field immediately
-                    current_pwd_field.value = ""
-                    try:
-                        current_pwd_field.update()
-                    except Exception:
-                        pass
-
-                    page.recovery_key_first_run = new_key
-
-                    show_snack(page, "Recovery key rotated.", "green")
-
+                    # Do NOT clear password yet; commit happens after "I saved it"
                     close_rotate()
-                    show_new_recovery_key_ceremony(new_key)
+                    show_new_recovery_key_ceremony(staged_key)
 
                 except Exception as ex:
                     page._rotate_rk_status.value = str(ex)

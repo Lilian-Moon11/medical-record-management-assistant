@@ -20,33 +20,81 @@ import flet as ft
 
 def s(page: ft.Page, px: int) -> int:
     """Scale-safe sizing helper."""
-    # Defaults to 1.0 if ui_scale is not set yet
     scale = getattr(page, "ui_scale", 1.0)
-    if scale is None: scale = 1.0
+    if scale is None:
+        scale = 1.0
     return int(px * scale)
 
-def show_snack(page: ft.Page, message: str, color: str = "green"):
-    """Displays a snackbar message."""
+def show_snack(page: ft.Page, message: str, color=ft.Colors.GREEN):
+    """Displays a snackbar message (create once, reuse forever). Accepts ft.Colors.* or 'green'/'red' strings."""
     try:
-        page.snack_bar = ft.SnackBar(ft.Text(message), bgcolor=color)
+        # Allow legacy string colors
+        if isinstance(color, str):
+            color_map = {
+                "green": ft.Colors.GREEN,
+                "red": ft.Colors.RED,
+                "orange": ft.Colors.ORANGE,
+                "blue": ft.Colors.BLUE,
+                "yellow": ft.Colors.YELLOW,
+            }
+            color = color_map.get(color.lower(), ft.Colors.GREEN)
+
+        if not hasattr(page, "_snack_text") or page._snack_text is None:
+            page._snack_text = ft.Text("")
+            page.snack_bar = ft.SnackBar(content=page._snack_text, bgcolor=ft.Colors.GREEN)
+
+        page._snack_text.value = message
+        page.snack_bar.bgcolor = color
         page.snack_bar.open = True
         page.update()
     except Exception as ex:
         print("SNACK ERROR:", ex, "| message:", message)
 
+def run_async(page: ft.Page, coro):
+    """Run a coroutine reliably from a sync event handler."""
+    try:
+        if hasattr(page, "run_task"):
+            page.run_task(coro)
+            return
+    except Exception:
+        pass
+
+    import asyncio
+    asyncio.create_task(coro)
+
+async def copy_with_snack(
+    page: ft.Page,
+    text: str,
+    ok_message: str = "Copied to clipboard.",
+    fail_message: str = "Could not copy to clipboard on this platform.",
+    ok_color=ft.Colors.GREEN,
+    fail_color=ft.Colors.ORANGE,
+) -> bool:
+    """
+    Clipboard copy + snackbar.
+    Uses ft.Clipboard().set() (works for you in Settings).
+    """
+    text = text or ""
+    try:
+        await ft.Clipboard().set(text)
+        show_snack(page, ok_message, ok_color)
+        return True
+    except Exception as ex:
+        print("CLIPBOARD FAIL:", ex)
+        show_snack(page, fail_message, fail_color)
+        return False
+
 def themed_panel(page: ft.Page, content, padding=None, radius=6):
     """
-    A theme-safe container that looks good in light/dark, 
+    A theme-safe container that looks good in light/dark,
     and enforces high-contrast when enabled.
     """
     hc = getattr(page, "is_high_contrast", False)
-    
+
     if padding is None:
         padding = s(page, 15)
 
     if hc:
-        # FIX: Ensure text is visible against the forced Black background.
-        # If the content is text, we turn it Yellow to match the border.
         if isinstance(content, ft.Text) and content.color is None:
             content.color = ft.Colors.YELLOW
 
@@ -62,6 +110,7 @@ def themed_panel(page: ft.Page, content, padding=None, radius=6):
         content=content,
         padding=padding,
         bgcolor=None,
-        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT) if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
+        if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
         border_radius=radius,
     )
