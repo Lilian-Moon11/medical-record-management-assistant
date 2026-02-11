@@ -7,14 +7,27 @@
 
 # -----------------------------------------------------------------------------
 # PURPOSE:
-# Handles App-wide preferences.
-# When a user changes a setting here, it updates the DB *and* triggers
-# a callback to 'main.py' to re-apply the theme immediately.
+# Settings screen and preference orchestration for the app.
+#
+# Provides the UI and wiring for app-wide preferences (theme, high contrast,
+# large text), persisting changes to the database and immediately re-applying
+# them via a callback into main.py for instant visual feedback.
+#
+# Also includes a secure recovery-key rotation flow:
+# - Requires the current database password for verification
+# - Confirms intent before rotating (destructive to the old key)
+# - Generates and displays the new recovery key with copy support
+#
+# Emphasizes safety and clarity: settings changes are durable (DB-backed),
+# UI updates are immediate, and key-management actions are guarded with
+# explicit checks and user messaging.
 # -----------------------------------------------------------------------------
 
 import flet as ft
 from database import get_setting, set_setting
 from utils import s, show_snack
+from crypto.keybag import verify_password, rotate_recovery_key
+
 
 def get_settings_view(page: ft.Page, apply_settings_callback):
     """
@@ -72,6 +85,210 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         apply_settings_callback()
         show_snack(page, "Defaults restored.", "blue")
 
+    # Rotate Recovery Key
+    current_pwd_field = ft.TextField(
+        label="Current database password (required to rotate recovery key)",
+        password=True,
+        can_reveal_password=True,
+        width=420,
+    )
+
+    def show_new_recovery_key_ceremony(new_key):
+        # Create dialog once and reuse it
+        if not hasattr(page, "_new_rk_dlg") or page._new_rk_dlg is None:
+            page._new_rk_value = ""
+
+            page._new_rk_text = ft.Text(
+                "",
+                selectable=True,
+                font_family="Consolas",
+            )
+
+            page._new_rk_saved_check = ft.Checkbox(
+                label="I saved this recovery key somewhere safe.",
+                value=False,
+            )
+
+            page._new_rk_status = ft.Text("", color="red")
+
+            page._new_rk_done_btn = ft.Button(
+                "I saved it",
+                icon=ft.Icons.CHECK,
+                disabled=True,
+            )
+
+            async def copy_key(_):
+                try:
+                    await ft.Clipboard().set(page._new_rk_value)
+                    show_snack(page, "Recovery key copied to clipboard.", "green")
+                except Exception as ex:
+                    print("CLIPBOARD FAIL:", ex)
+                    show_snack(page, "Could not copy to clipboard on this platform.", "orange")
+
+            def close(_=None):
+                if not page._new_rk_saved_check.value:
+                    page._new_rk_status.value = "Please confirm you saved it before closing."
+                    try:
+                        page._new_rk_dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+                    return
+
+                page._new_rk_dlg.open = False
+                try:
+                    page._new_rk_dlg.update()
+                except Exception:
+                    pass
+                page.update()
+
+            def on_check(_):
+                page._new_rk_done_btn.disabled = not bool(page._new_rk_saved_check.value)
+                try:
+                    page._new_rk_dlg.update()
+                except Exception:
+                    pass
+                page.update()
+
+            page._new_rk_saved_check.on_change = on_check
+            page._new_rk_done_btn.on_click = close
+
+            page._new_rk_dlg = ft.AlertDialog(
+                modal=False,
+                title=ft.Text("New Recovery Key"),
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "Save this recovery key somewhere safe.\n"
+                            "If you lose both your password and this key, the vault cannot be recovered."
+                        ),
+                        ft.Container(
+                            padding=10,
+                            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
+                            if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+                            content=page._new_rk_text,
+                        ),
+                        ft.Row(
+                            [
+                                ft.Button("Copy", icon=ft.Icons.CONTENT_COPY, on_click=copy_key),
+                            ]
+                        ),
+                        page._new_rk_saved_check,
+                        page._new_rk_status,
+                    ],
+                    tight=True,
+                ),
+                actions=[page._new_rk_done_btn],
+                on_dismiss=close,
+            )
+            page.overlay.append(page._new_rk_dlg)
+
+        # Update dialog content for THIS key
+        page._new_rk_value = new_key
+        page._new_rk_text.value = new_key
+        page._new_rk_saved_check.value = False
+        page._new_rk_done_btn.disabled = True
+        page._new_rk_status.value = ""
+
+        page._new_rk_dlg.open = True
+        try:
+            page._new_rk_dlg.update()
+        except Exception:
+            pass
+        page.update()
+
+    def close_dialog(dlg: ft.AlertDialog):
+        dlg.open = False
+        try:
+            dlg.update()
+        except Exception:
+            pass
+        page.update()
+
+    def rotate_recovery_click(e):
+        # Guardrails
+        if not getattr(page, "db_path", None) or not getattr(page, "db_key_raw", None):
+            show_snack(page, "Vault not loaded; cannot rotate recovery key.", "red")
+            return
+            return
+
+        pwd = (current_pwd_field.value or "").strip()
+        if not pwd:
+            show_snack(page, "Enter your current database password to rotate the recovery key.", "orange")
+            return
+
+        # Create dialog once and reuse it
+        if not hasattr(page, "_rotate_rk_dlg") or page._rotate_rk_dlg is None:
+            page._rotate_rk_status = ft.Text("", color="red")
+
+            def close_rotate(_=None):
+                page._rotate_rk_dlg.open = False
+                page._rotate_rk_status.value = ""
+                try:
+                    page._rotate_rk_dlg.update()
+                except Exception:
+                    pass
+                page.update()
+
+            def do_rotate(_=None):
+                try:
+                    pwd_now = (current_pwd_field.value or "").strip()
+                    if not pwd_now:
+                        raise RuntimeError("Enter your current database password.")
+
+                    if not verify_password(page.db_path, pwd_now):
+                        raise RuntimeError("Incorrect password.")
+
+                    new_key = rotate_recovery_key(page.db_path, page.db_key_raw)
+
+                    # Clear the password field immediately
+                    current_pwd_field.value = ""
+                    try:
+                        current_pwd_field.update()
+                    except Exception:
+                        pass
+
+                    page.recovery_key_first_run = new_key
+
+                    show_snack(page, "Recovery key rotated.", "green")
+
+                    close_rotate()
+                    show_new_recovery_key_ceremony(new_key)
+
+                except Exception as ex:
+                    page._rotate_rk_status.value = str(ex)
+                    try:
+                        page._rotate_rk_dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+
+            page._rotate_rk_dlg = ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Rotate recovery key?"),
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "This will generate a NEW recovery key and invalidate the previous one.\n"
+                            "Make sure you save the new key immediately."
+                        ),
+                        page._rotate_rk_status,
+                    ],
+                    tight=True,
+                ),
+                actions=[
+                    ft.Button("Cancel", on_click=close_rotate),
+                    ft.Button("Rotate", icon=ft.Icons.REPLAY, on_click=do_rotate),
+                ],
+                on_dismiss=close_rotate,
+            )
+            page.overlay.append(page._rotate_rk_dlg)
+
+        # Open it
+        page._rotate_rk_status.value = ""
+        page._rotate_rk_dlg.open = True
+        page.update()
+
     # 4. Return Layout
     return ft.Container(
         padding=s(page, 20),
@@ -91,6 +308,23 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     "Note: High Contrast mode overrides the Theme selection.", 
                     color=ft.Colors.GREY, 
                     size=s(page, 14)
+                ),
+                ft.Divider(),
+                ft.Text("Recovery Key", size=s(page, 18), weight="bold"),
+                ft.Text(
+                    "Rotate your recovery key if you think it may be exposed, or just periodically.",
+                    size=s(page, 14),
+                    color=ft.Colors.GREY,
+                ),
+                current_pwd_field,
+                ft.Row(
+                    [
+                        ft.Button(
+                            "Rotate Recovery Key",
+                            icon=ft.Icons.VPN_KEY,
+                            on_click=rotate_recovery_click,
+                        ),
+                    ]
                 )
             ]
         )

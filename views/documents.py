@@ -31,7 +31,9 @@ import flet as ft
 import os
 import asyncio
 import tempfile
-from crypto_storage import get_or_create_file_master_key, encrypt_bytes, decrypt_bytes
+
+from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes, decrypt_bytes
+
 from datetime import datetime
 
 from database import (
@@ -108,6 +110,7 @@ def get_documents_view(page: ft.Page):
             title=ft.Text("Confirm Delete"),
             content=ft.Text(""),
             actions=[
+                # I know ElevatedButton was depricated, but I don't get there error here and it's the only way I have found to make this section work. 
                 ft.ElevatedButton("Cancel", on_click=close_delete_dlg),
                 ft.ElevatedButton("Delete", icon=ft.Icons.DELETE, on_click=confirm_delete),
             ],
@@ -154,7 +157,8 @@ def get_documents_view(page: ft.Page):
 
         try:
             # Decrypt to a temp PDF for viewing
-            fmk = get_or_create_file_master_key(page.db_connection, page.db_password)
+            fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
+
             with open(path, "rb") as f:
                 ciphertext = f.read()
             plaintext = decrypt_bytes(fmk, ciphertext)
@@ -302,7 +306,8 @@ def get_documents_view(page: ft.Page):
             with open(src_path, "rb") as f:
                 plaintext = f.read()
 
-            fmk = get_or_create_file_master_key(page.db_connection, page.db_password)
+            fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
+
             ciphertext = encrypt_bytes(fmk, plaintext)
 
             with open(enc_path, "wb") as f:

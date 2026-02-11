@@ -106,7 +106,7 @@ def get_patient_info_view(page: ft.Page):
                 tight=True,
             ),
             actions=[
-                ft.TextButton("Cancel", on_click=close_add_field_dlg),
+                ft.ElevatedButton("Cancel", on_click=close_add_field_dlg),
                 ft.ElevatedButton("Add", icon=ft.Icons.ADD, on_click=do_add_field),
             ],
             on_dismiss=close_add_field_dlg,

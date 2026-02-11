@@ -1,9 +1,11 @@
 #Prevents patient files from getting uploaded to the github/version control
 # --- Python & System Junk ---
+.venv/
 venv/
 __pycache__/
 *.py[cod]
 .DS_Store
+.vs/
 
 # --- Environment Variables ---
 .env
@@ -11,6 +13,7 @@ __pycache__/
 # --- Patient Data (CRITICAL SAFETY LOCK) ---
 # Database files
 *.db
+*.db.keybag
 *.sqlite
 *.sqlite3
 

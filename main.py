@@ -9,26 +9,37 @@
 # PURPOSE:
 # App entry point and UI shell for Local Patient Advocate.
 #
-# Responsibilities:
-# - Initializes the Flet page/window and app-wide state (db connection, profile,
-#   accessibility flags, UI scale)
-# - Handles secure login and database initialization
-# - Loads and applies persisted UI settings (theme mode, high contrast, large text)
-#   and refreshes the active view immediately when settings change
-# - Provides top-level navigation (NavigationRail) and routes to view modules
+# This module initializes the Flet window and global page state, manages secure
+# vault login/recovery, applies persisted UI preferences, and routes navigation
+# to the primary view modules.
+#
+# Responsibilities include:
+# - Initializing the Flet page/window and app-wide state (DB connection, profile,
+#   accessibility flags, UI scale, vault path/key material)
+# - Handling secure unlock flows:
+#   - normal password unlock (create or open vault)
+#   - recovery-key unlock + password reset + recovery key rotation
+# - Running cryptographic self-tests after unlock/recovery to fail closed on
+#   key mismatch or suspected corruption
+# - Loading and applying persisted UI settings (theme, high contrast, large text)
+#   and refreshing the active view immediately on change
+# - Providing top-level navigation (NavigationRail) and view routing
 #   (Overview / Patient Info / Documents / Settings)
-# - Centralizes error handling for view loading and critical startup failures
-# - Retains the active database password in memory for the session to support
-#  encrypted file access (never persisted to disk)
+# - Centralizing error handling for view rendering and critical startup failures
+# - Retaining the active database password in memory for the session only
+#   (never persisted) to support encrypted file access
 # -----------------------------------------------------------------------------
 
 import flet as ft
 import traceback
-from database import init_db, get_profile, get_setting
+from database import open_or_create_vault, open_vault_with_recovery, get_profile, get_setting
 from views.documents import get_documents_view
 from views.overview import get_overview_view
 from views.patient_info import get_patient_info_view
 from views.settings import get_settings_view
+from crypto.keybag import set_new_password, rotate_recovery_key_with_old
+from utils import s, show_snack
+from crypto.selftest import run_crypto_self_test
 
 def main(page: ft.Page):
     page.title = "Local Patient Advocate"
@@ -43,6 +54,9 @@ def main(page: ft.Page):
     page.db_connection = None
     page.is_high_contrast = False
     page.ui_scale = 1.0
+    page.db_key_raw = None
+    page.db_path = None
+    page.recovery_key_first_run = None
 
 
     # --- MAIN LOGIC ---
@@ -155,22 +169,284 @@ def main(page: ft.Page):
         except Exception as ex:
             show_critical_error(ex)
 
+    def open_forgot_password(e=None):
+        # Create once, reuse forever
+        if not hasattr(page, "_forgot_dlg") or page._forgot_dlg is None:
+            page._forgot_recovery_field = ft.TextField(
+                label="Recovery key",
+                password=True,
+                can_reveal_password=True,
+                width=420,
+            )
+            page._forgot_new_pwd_field = ft.TextField(
+                label="New database password",
+                password=True,
+                can_reveal_password=True,
+                width=420,
+            )
+            page._forgot_new_pwd2_field = ft.TextField(
+                label="Confirm new password",
+                password=True,
+                can_reveal_password=True,
+                width=420,
+            )
+            page._forgot_status = ft.Text("", color="red")
+
+            def close(_=None):
+                page._forgot_dlg.open = False
+                page.update()
+
+            def do_recover(_):
+                rk = (page._forgot_recovery_field.value or "").strip()
+                p1 = page._forgot_new_pwd_field.value or ""
+                p2 = page._forgot_new_pwd2_field.value or ""
+
+                if not rk:
+                    page._forgot_status.value = "Recovery key is required."
+                    page.update()
+                    return
+                if not p1 or len(p1) < 8:
+                    page._forgot_status.value = "New password must be at least 8 characters."
+                    page.update()
+                    return
+                if p1 != p2:
+                    page._forgot_status.value = "Passwords do not match."
+                    page.update()
+                    return
+
+                try:
+                    conn, dmk_raw, db_path = open_vault_with_recovery(rk)
+                    set_new_password(db_path, dmk_raw, p1)
+                    new_rk = rotate_recovery_key_with_old(db_path, dmk_raw, rk)
+
+                    # Switch session
+                    page.db_connection = conn
+                    page.db_key_raw = dmk_raw
+                    page.db_path = db_path
+                    page.db_password = p1
+
+                    res = run_crypto_self_test(
+                        db_path=page.db_path,
+                        conn=page.db_connection,
+                        db_key_raw=page.db_key_raw,
+                        password=page.db_password,
+                    )
+                    if not res.ok:
+                        show_snack(page, res.user_message, "red")
+                        print("SELFTEST FAIL (RECOVERY):", res.dev_details)
+                        return
+
+                    page.recovery_key_first_run = new_rk
+
+                    apply_settings()
+                    page.current_profile = get_profile(page.db_connection)
+                    show_main_dashboard()
+
+                    show_snack(page, "Password reset. A new recovery key was generated.", "green")
+
+                    # Clear fields
+                    page._forgot_recovery_field.value = ""
+                    page._forgot_new_pwd_field.value = ""
+                    page._forgot_new_pwd2_field.value = ""
+                    page._forgot_status.value = ""
+
+                    close()
+                    show_recovery_ceremony(new_rk)
+
+                except Exception as ex:
+                    page._forgot_status.value = str(ex)
+                    page.update()
+
+            page._forgot_dlg = ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Recover account"),
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "Enter your recovery key and choose a new password.\n"
+                            "After recovery, a NEW recovery key will be generated."
+                        ),
+                        page._forgot_recovery_field,
+                        page._forgot_new_pwd_field,
+                        page._forgot_new_pwd2_field,
+                        page._forgot_status,
+                    ],
+                    tight=True,
+                ),
+                actions=[
+                    ft.TextButton("Cancel", on_click=close),
+                    ft.Button("Reset password", icon=ft.Icons.LOCK_RESET, on_click=do_recover),
+                ],
+                on_dismiss=close,
+            )
+
+            page.overlay.append(page._forgot_dlg)
+
+        # Reset UI state each open
+        page._forgot_status.value = ""
+        page._forgot_dlg.open = True
+        page.update()  
+
     def attempt_login(e):
+        pwd = (password_field.value or "").strip()
+        if not pwd:
+            return
+
+        # open_or_create_vault returns (conn, db_key_raw, db_path, recovery_key)
+        conn = None
         try:
-            pwd = password_field.value
-            page.db_password = pwd
-            if not pwd: return
-            
-            page.db_connection = init_db(pwd)
+            conn, dmk_raw, db_path, recovery_key = open_or_create_vault(pwd)
+
+            res = run_crypto_self_test(
+                db_path=db_path,
+                conn=conn,
+                db_key_raw=dmk_raw,
+                password=pwd,
+            )
+
+            if not res.ok:
+                show_snack(page, res.user_message, "red")
+                print("SELFTEST FAIL:", res.dev_details)
+
+                # Hard stop back to login
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+                password_field.value = ""
+                page.update()
+                return
+
+            page.db_connection = conn
+            page.db_key_raw = dmk_raw
+            page.db_path = db_path
+            page.db_password = pwd  # kept ONLY in memory
+            page.recovery_key_first_run = recovery_key
+
+            if recovery_key:
+                show_recovery_ceremony(recovery_key)
+
             apply_settings()
             page.current_profile = get_profile(page.db_connection)
             show_main_dashboard()
-                
+
         except Exception as ex:
-            error_text.value = f"Login Error: {str(ex)}"
-            error_text.visible = True
+            # open_or_create_vault itself can fail (bad password, corrupted db, etc.)
+            show_snack(page, f"Login failed: {ex}", "red")
+            print("LOGIN FAIL:", ex)
+
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+            password_field.value = ""
             page.update()
-            print(traceback.format_exc())
+            return
+
+    def show_recovery_ceremony(recovery_key: str):
+        # Create dialog once and reuse it
+        if not hasattr(page, "_recovery_dlg") or page._recovery_dlg is None:
+
+            page._recovery_key_text = ft.Text("", selectable=True, font_family="Consolas", size=s(page, 14))
+
+            page._recovery_saved_check = ft.Checkbox(
+                label="I saved this recovery key somewhere safe.",
+                value=False,
+            )
+
+            page._recovery_status = ft.Text("", color="red", size=s(page, 12))
+
+            async def copy_key(_):
+                try:
+                    await ft.Clipboard().set(recovery_key)
+                    show_snack(page, "Recovery key copied to clipboard.", "green")
+                except Exception as ex:
+                    print("CLIPBOARD FAIL:", ex)
+                    show_snack(page, "Could not copy to clipboard on this platform.", "orange")
+
+            def close(_=None):
+                if not page._recovery_saved_check.value:
+                    page._recovery_status.value = "Please confirm you saved it before closing."
+                    try:
+                        page._recovery_dlg.update()
+                    except Exception:
+                        pass
+                    page.update()
+                    return
+
+                page._recovery_dlg.open = False
+                try:
+                    page._recovery_dlg.update()
+                except Exception:
+                    pass
+                page.update()
+
+            page._recovery_done_btn = ft.Button(
+                "I saved it",
+                icon=ft.Icons.CHECK,
+                on_click=close,
+                disabled=True,
+            )
+
+            def on_check(_):
+                page._recovery_done_btn.disabled = not bool(page._recovery_saved_check.value)
+                try:
+                    page._recovery_dlg.update()
+                except Exception:
+                    pass
+                page.update()
+
+            page._recovery_saved_check.on_change = on_check
+
+            page._recovery_dlg = ft.AlertDialog(
+                modal=False,  # same style as your delete dialog
+                title=ft.Text("Save your recovery key", size=s(page, 18), weight="bold"),
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "This key lets you recover the vault if you forget your password.\n"
+                            "If you lose BOTH your password and this key, the vault cannot be recovered.",
+                            size=s(page, 14),
+                        ),
+                        ft.Container(
+                            padding=s(page, 10),
+                            border=ft.Border.all(2, ft.Colors.GREY),
+                            border_radius=8,
+                            content=page._recovery_key_text,
+                        ),
+                        ft.Row(
+                            [
+                                ft.Button("Copy", icon=ft.Icons.CONTENT_COPY, on_click=copy_key),
+                            ]
+                        ),
+                        page._recovery_saved_check,
+                        page._recovery_status,
+                    ],
+                    tight=True,
+                    spacing=s(page, 10),
+                ),
+                actions=[page._recovery_done_btn],
+                on_dismiss=close,
+            )
+
+            page.overlay.append(page._recovery_dlg)
+
+        # Update values for this run
+        page._recovery_key_text.value = recovery_key
+        page._recovery_saved_check.value = False
+        page._recovery_status.value = ""
+        page._recovery_done_btn.disabled = True
+
+        # Open it
+        page._recovery_dlg.open = True
+        try:
+            page._recovery_dlg.update()
+        except Exception:
+            pass
+        page.update()
 
     def logout():
         # Close DB connection
@@ -208,6 +484,7 @@ def main(page: ft.Page):
             password_field,
             ft.Button("Unlock Database", on_click=attempt_login),
             error_text,
+            ft.TextButton("Forgot password?", on_click=open_forgot_password),
         ],
         alignment=ft.MainAxisAlignment.CENTER,
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
