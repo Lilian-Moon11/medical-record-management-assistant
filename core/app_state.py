@@ -80,3 +80,7 @@ def clear_session(page) -> None:
 
 def is_unlocked(page) -> bool:
     return bool(getattr(page, "db_connection", None))
+
+def clear_unlocked_session(page) -> None:
+    # Backwards-compatible alias for login.py
+    clear_session(page)

@@ -30,10 +30,13 @@ import traceback
 import flet as ft
 
 from database import get_setting
+from core import app_state
 from views.documents import get_documents_view
 from views.overview import get_overview_view
 from views.patient_info import get_patient_info_view
 from views.settings import get_settings_view
+from views.providers import get_providers_view
+from views.labs import get_labs_view
 
 
 def apply_settings(page, *, get_view_for_index):
@@ -79,14 +82,30 @@ def make_get_view_for_index(page, *, apply_settings_callback):
     Returns a function get_view_for_index(index) bound to the page.
     """
     def get_view_for_index(index: int):
+         # BLOCK ACCESS IF VAULT NOT UNLOCKED
+        if not app_state.is_unlocked(page):
+            return ft.Column(
+                [
+                    ft.Icon(ft.Icons.LOCK, size=40, color="red"),
+                    ft.Text("Vault is locked.", size=20, weight="bold"),
+                    ft.Text("Please log in to access patient data."),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+        
         try:
             if index == 0:
                 return get_overview_view(page)
             elif index == 1:
                 return get_patient_info_view(page)
             elif index == 2:
-                return get_documents_view(page)
+                return get_labs_view(page)
             elif index == 3:
+                return get_documents_view(page)
+            elif index == 4:
+                return get_providers_view(page)
+            elif index == 5:
                 return get_settings_view(page, apply_settings_callback=apply_settings_callback)
 
             return ft.Text("Unknown View")

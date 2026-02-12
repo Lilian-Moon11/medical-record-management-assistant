@@ -49,6 +49,16 @@ def build_login_view(
         if not pwd:
             return
 
+        # Always clear any previous unlocked session first
+        try:
+            app_state.clear_unlocked_session(page)  # if you have it
+        except Exception:
+            # fallback if you don't have a helper
+            page.db_connection = None
+            page.db_key_raw = None
+            page.db_path = None
+            page.current_profile = None
+
         conn = None
         try:
             conn, dmk_raw, db_path, recovery_key = open_or_create_vault(pwd)
@@ -93,14 +103,28 @@ def build_login_view(
             show_snack(page, f"Login failed: {ex}", "red")
             print("LOGIN FAIL:", ex)
 
+            # Always close the local conn if it exists
             try:
                 if conn:
                     conn.close()
             except Exception:
                 pass
 
+            # Always clear page/app session state so nothing remains accessible
+            try:
+                app_state.clear_session(page)
+            except Exception:
+                page.db_connection = None
+                page.db_key_raw = None
+                page.db_path = None
+                page.db_password = None
+                page.current_profile = None
+                page.nav_rail = None
+                page.content_area = None
+
             password_field.value = ""
             page.update()
+            return
 
     password_field.on_submit = attempt_login
 

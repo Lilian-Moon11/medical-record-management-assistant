@@ -59,7 +59,9 @@ def show_main_dashboard(page: ft.Page, *, get_view_for_index):
             destinations=[
                 ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD, label="Overview"),
                 ft.NavigationRailDestination(icon=ft.Icons.BADGE, label="Patient Info"),
+                ft.NavigationRailDestination(icon=ft.Icons.SCIENCE, label="Labs"),
                 ft.NavigationRailDestination(icon=ft.Icons.FOLDER, label="Documents"),
+                ft.NavigationRailDestination(icon=ft.Icons.LOCAL_HOSPITAL, label="Providers"),
                 ft.NavigationRailDestination(icon=ft.Icons.SETTINGS, label="Settings"),
             ],
             on_change=nav_change,
