@@ -7,26 +7,28 @@
 
 # -----------------------------------------------------------------------------
 # PURPOSE:
-# Centralized dialog registration and secure recovery flows.
+# Centralized registration for long-lived Flet dialogs used by the Patient Info
+# experience and recovery flows.
 #
-# This module creates and manages long-lived dialogs (stored on page.* and
-# registered in page.overlay exactly once) to ensure reliable rendering across
-# the app UI shell.
+# This module mounts dialogs once (stored on `page.*` and appended to
+# `page.overlay` exactly once) to keep handlers stable across rerenders and
+# navigation. It exposes safe entry points (methods attached to `page`) for:
+# - Sensitive Details dialog: masked-by-default DOB/SSN display with explicit
+#   “Reveal” gating before edits, and SSN persistence to patient_field_values.
+# - Patient Info management dialogs:
+#   - Delete field definition (with guardrails preventing deletion of core/system keys)
+#   - Add custom field (unique field_key generation + basic data-type detection)
+#   - Bulk “Edit Sensitivity” switches that toggle section/list sensitivity flags
+#     in field_definitions (e.g., section.demographics / section.other).
+# - Account recovery dialogs:
+#   - Forgot-password flow (unlock via recovery key, set new password)
+#   - Recovery-key ceremony (copy/display key + require “I saved it”)
+#   - Staged recovery-key rotation committed only after confirmation
 #
-# Provides two primary dialog workflows:
-# - Recovery key “ceremony” for displaying/copying a recovery key and requiring
-#   explicit user confirmation (“I saved it”) before closing
-# - “Forgot password” recovery flow using a recovery key to unlock the vault,
-#   set a new password, and generate a new recovery key
-#
-# Security/UX design goals:
-# - Prevent accidental lockout: recovery-key rotation is staged and only
-#   committed after the user confirms they saved the new key
-# - Keep key material transient: recovery keys are stored only in-memory for
-#   display and clipboard copy, never persisted by this module
-# - Fail closed with clear messaging if recovery/unlock operations fail
-# - Make dialogs idempotent and reusable: safe to call registration repeatedly
-#   without duplicating overlay entries or leaking UI state
+# Intersections:
+# - Called by view modules (e.g., patient_info) to register dialogs and use the
+#   exposed `page.open_*` functions, while actual UI rendering stays in the views.
+# - Writes sensitivity settings and field definitions through the database layer.
 # -----------------------------------------------------------------------------
 
 from __future__ import annotations

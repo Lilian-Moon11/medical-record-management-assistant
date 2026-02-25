@@ -5,6 +5,37 @@
 # published by the Free Software Foundation, either version 3 of the
 # License, or any later version.
 
+# -----------------------------------------------------------------------------
+# PURPOSE:
+# Patient Info view builder + UI state for editable profile fields and JSON-list
+# sections (Allergies, Medications, Insurance) with optional “shield” sensitivity
+# controls.
+#
+# This module renders the full Patient Info screen and provides:
+# - A main orchestrator (`get_patient_info_view`) that loads field definitions
+#   and saved values, groups fields into Demographics + custom categories, and
+#   mounts each section into themed panels.
+# - JSON list editors (`ListEditorBody` / `ListRow`) for structured lists stored
+#   as JSON (add/save/delete rows), with an optional master “reveal/hide” toggle
+#   that masks values when a section is marked sensitive.
+# - Category tables (`CategoryPanel`) for single-value fields (core + custom),
+#   supporting label edits for custom fields, value persistence, and guarded
+#   deletion via dialogs registered in `ui.dialogs.ensure_patient_info_dialogs`.
+# - Local per-page UI state (`page._field_vis`, `page._panel_vis`) to keep row-
+#   level and panel-level reveal states stable across refresh/rerender, plus an
+#   optional provenance display (`page._show_provenance`).
+#
+# Data + security/UX behaviors:
+# - Uses DB field definitions + patient field map to drive UI composition.
+# - Persists edits via `update_profile` for core fields and
+#   `upsert_patient_field_value` for custom/list values.
+# - Sensitivity (“shield”) is controlled by special section/list keys
+#   (e.g., `section.demographics`, `section.other`, `allergyintolerance.list`);
+#   when enabled, values default to masked until explicitly revealed.
+# - Deletions are confirmed (list rows) or routed through the shared delete-field
+#   dialog (custom field definitions), with core fields protected from deletion.
+# -----------------------------------------------------------------------------
+
 import flet as ft
 from datetime import datetime
 import json
@@ -429,29 +460,43 @@ class CategoryPanel(ft.Column):
         del_btn = ft.IconButton(icon=ft.Icons.DELETE, tooltip="Delete", disabled=not can_delete)
 
         def save_click(e):
+            nonlocal row_id  # Informs Python that row_id belongs to the outer create_row scope
             new_lbl = (field_tf.value or "").strip()
             new_val = (value_tf.value or "").strip()
+            
             if not new_lbl:
                 return show_snack(self._page, "Field Name is required", "red")
 
             fk = field_key
             if not fk:
+                # Logic for creating a brand-new custom field
                 base = f"custom.{slugify_label(self.category_name)}.{slugify_label(new_lbl)}"
                 fk = base
                 n = 2
                 while field_definition_exists(self._page.db_connection, fk):
                     fk = f"{base}.{n}"
                     n += 1
-                ensure_field_definition(self._page.db_connection, fk, new_lbl, category=self.category_name, is_sensitive=0)
+                
+                # Persist the new definition to the DB
+                ensure_field_definition(
+                    self._page.db_connection, 
+                    fk, 
+                    new_lbl, 
+                    category=self.category_name, 
+                    is_sensitive=0
+                )
                 del_btn.disabled = False
                 
+                # Update the row's tracking ID from 'new_xxxx' to the actual DB key
                 old_id = row_id
                 row_id = fk
                 self._page._field_vis[row_id] = self._page._field_vis.pop(old_id, True)
             else:
+                # Update the label of an existing custom field (Core fields are read-only)
                 if not is_core:
                     update_field_definition_label(self._page.db_connection, fk, new_lbl)
 
+            # Handle Core Profile fields vs. Generic custom fields
             if fk == "core.name":
                 p = self._page.current_profile
                 update_profile(self._page.db_connection, p[0], new_val, p[2], p[3])
@@ -463,7 +508,14 @@ class CategoryPanel(ft.Column):
                 self._page.current_profile = get_profile(self._page.db_connection)
                 src_text.value, upd_text.value = "system", ""
             else:
-                upsert_patient_field_value(self._page.db_connection, self.patient_id, fk, new_val, "user")
+                # Standard custom field value update
+                upsert_patient_field_value(
+                    self._page.db_connection, 
+                    self.patient_id, 
+                    fk, 
+                    new_val, 
+                    "user"
+                )
                 src_text.value = "user"
                 upd_text.value = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -516,30 +568,16 @@ def get_patient_info_view(page: ft.Page):
 
     ensure_patient_info_dialogs(page, refresh)
 
+    allergies_key = "allergyintolerance.list"
+    meds_key = "medicationstatement.current_list"
+    insurance_key = "insurance.list"
+
     def open_delete_dialog(fk, lbl, row_ref, table_ref):
         page._delete_inline_row = row_ref
         page._delete_inline_table = table_ref
         page.open_delete_field_dialog(fk, clean_lbl(lbl))
 
     page._open_delete_dialog = open_delete_dialog
-
-    def seed(key, label, cat, dt, sens=0):
-        try:
-            ensure_field_definition(page.db_connection, key, label, data_type=dt, category=cat, is_sensitive=sens)
-        except Exception:
-            pass
-
-    allergies_key = "allergyintolerance.list"
-    meds_key = "medicationstatement.current_list"
-    insurance_key = "insurance.list"
-
-    seed(allergies_key, "Allergies", "Allergies", "json", 0)
-    seed(meds_key, "Current Medications", "Medications", "json", 0)
-    seed(insurance_key, "Insurance Plans", "Insurance", "json", 0)
-    seed("section.demographics", "Demographics Section", "System", "json", 0)
-    seed("section.other", "Other Section", "System", "json", 0)
-    seed("core.name", "Full Name", "Demographics", "text", 0)
-    seed("core.dob", "Date of Birth", "Demographics", "date", 0)
 
     defs = list_field_definitions(page.db_connection)
     value_map = get_patient_field_map(page.db_connection, patient_id)
@@ -605,7 +643,7 @@ def get_patient_info_view(page: ft.Page):
         ListEditorBody(
             page,
             patient_id,
-            "Allergies",
+            "Allergies / Intolerances",
             allergies_key,
             _load_json_list((value_map.get(allergies_key, {}) or {}).get("value")),
             [("substance", "Substance"), ("reaction", "Reaction"), ("severity", "Severity"), ("notes", "Notes")],

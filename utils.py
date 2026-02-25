@@ -7,13 +7,24 @@
 
 # -----------------------------------------------------------------------------
 # PURPOSE:
-# Shared UI utilities for consistent, accessible rendering across the app.
+# Shared UI and data-entry utilities for consistent, accessible rendering
+# across the app.
+#
+# This module centralizes small helpers used throughout views to keep UI
+# behavior consistent, reduce duplication, and support accessibility features.
 #
 # Includes:
-# - Scale-safe sizing helpers (respecting user UI scale preferences)
-# - Centralized snackbar messaging with safe error handling
-# - Theme-aware container helpers that adapt to light/dark mode and
+# - Scale-safe sizing helpers that respect the user’s UI scale preference
+# - Centralized snackbar messaging (create-once, reuse) with defensive handling
+# - Async helpers for running coroutines from sync event handlers
+# - Clipboard copy utilities with user feedback (snackbar success/failure)
+# - Theme-aware panel/container helpers that adapt to light/dark mode and
 #   enforce high-contrast accessibility when enabled
+# - Lightweight field/label utilities for dynamic forms:
+#   - data-type detection from human labels
+#   - slug generation for stable field keys
+#   - label cleanup and sensitive-flag parsing
+# - Small UI affordances (e.g., “reveal/hide” eye icon button)
 # -----------------------------------------------------------------------------
 
 import flet as ft
