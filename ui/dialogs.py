@@ -773,6 +773,8 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         for list_key, list_label in [
             ("allergyintolerance.list",          "Allergies"),
             ("medicationstatement.current_list", "Current Medications"),
+            ("conditions.list", "Conditions"),
+            ("procedures.list", "Surgeries"),
             ("insurance.list",                   "Insurance Plans"),
             ("providers.list",                   "Healthcare Providers"),
         ]:
