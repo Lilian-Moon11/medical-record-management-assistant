@@ -91,7 +91,7 @@ def get_overview_view(page: ft.Page):
                         ft.Column(
                             [
                                 ft.Text(patient[1], size=s(page, 30), weight="bold"),
-                                ft.Text(f"DOB: {patient[2]}", size=s(page, 16)),
+                                ft.Text(f"DOB: {patient[2] or '(not set)'}", size=s(page, 16)),
                             ]
                         ),
                         ft.Container(expand=True),

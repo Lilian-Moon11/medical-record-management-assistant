@@ -17,6 +17,34 @@
 # -----------------------------------------------------------------------------
 
 import flet as ft
+import re
+
+def is_sensitive_flag(v) -> bool:
+    try:
+        return int(v or 0) == 1
+    except Exception:
+        return False
+
+def detect_data_type_from_label(label: str) -> str:
+    l = (label or "").strip().lower()
+    if "email" in l: return "email"
+    if any(k in l for k in ["phone", "mobile", "cell", "tel"]): return "phone"
+    if any(k in l for k in ["dob", "birth", "birthday", "date"]): return "date"
+    if any(k in l for k in ["allerg", "medication", "meds", "rx", "immun", "vaccine", "list"]): return "json"
+    return "text"
+
+def slugify_label(label: str) -> str:
+    s = (label or "").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", ".", s)
+    s = re.sub(r"\.+", ".", s).strip(".")
+    return s or "field"
+
+def clean_lbl(lbl: str) -> str:
+    """Removes lingering JSON text from labels fetched from the DB"""
+    s = str(lbl or "")
+    s = s.replace("(FHIR-lite JSON list)", "")
+    s = s.replace("(JSON)", "")
+    return s.strip()
 
 def s(page: ft.Page, px: int) -> int:
     """Scale-safe sizing helper."""
@@ -113,4 +141,11 @@ def themed_panel(page: ft.Page, content, padding=None, radius=6):
         border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
         if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
         border_radius=radius,
+    )
+
+def make_eye_btn(page: ft.Page, revealed: bool, visible: bool = True) -> "ft.IconButton":
+    return ft.IconButton(
+        icon=ft.Icons.VISIBILITY_OFF if revealed else ft.Icons.VISIBILITY,
+        tooltip="Hide" if revealed else "Reveal",
+        visible=visible,
     )

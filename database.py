@@ -46,6 +46,26 @@ from crypto.keybag import (
     unlock_db_key_with_recovery,
 )
 
+def update_field_definition_label(conn, field_key: str, new_label: str):
+    new_label = (new_label or "").strip()
+    if not new_label:
+        return  # no-op; don't blank labels
+
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE field_definitions SET label=? WHERE field_key=?",
+        (new_label, field_key),
+    )
+    conn.commit()
+
+def update_field_definition_sensitivity(conn, field_key: str, is_sensitive: int):
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE field_definitions SET is_sensitive=? WHERE field_key=?",
+        (1 if is_sensitive else 0, field_key),
+    )
+    conn.commit()
+
 def resource_path(relative_path):
     """ Get absolute path to resource for dev and .exe """
     try:
@@ -102,6 +122,33 @@ def upsert_patient_field_value(conn, patient_id, field_key, value_text, source="
     """, (patient_id, field_key, value_text, source, now))
     conn.commit()
 
+def field_definition_exists(conn, field_key: str) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM field_definitions WHERE field_key=? LIMIT 1", (field_key,))
+    return cur.fetchone() is not None
+
+
+def delete_field_definition(conn, field_key: str):
+    """
+    Deletes a field definition AND all stored values for it.
+    """
+    cur = conn.cursor()
+    cur.execute("DELETE FROM patient_field_values WHERE field_key = ?", (field_key,))
+    cur.execute("DELETE FROM field_definitions WHERE field_key = ?", (field_key,))
+    conn.commit()
+
+
+def list_distinct_field_categories(conn) -> list[str]:
+    """
+    Used for dropdown categories. Returns sorted unique categories.
+    """
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT COALESCE(NULLIF(TRIM(category), ''), 'General') AS cat
+        FROM field_definitions
+        ORDER BY cat COLLATE NOCASE ASC
+    """)
+    return [r[0] for r in cur.fetchall()]
 
 def _sqlcipher_set_key(cursor, db_key_raw: bytes):
     """Set SQLCipher key using raw bytes (hex format)."""
@@ -355,8 +402,9 @@ def _ensure_schema(conn):
         ("patient.phone", "Phone", "phone", "Demographics", 0),
         ("patient.email", "Email", "email", "Demographics", 0),
         ("patient.address", "Address", "text", "Demographics", 0),
-        ("insurance.member_id", "Insurance Member ID", "text", "Insurance", 1),
-        ("insurance.group_id", "Insurance Group ID", "text", "Insurance", 1),
+
+        ("allergyintolerance.list", "Allergies (JSON)", "json", "Allergies", 0),
+        ("medicationstatement.current_list", "Current Medications (JSON)", "json", "Medications", 0),
     ]
     for k, label, dt, cat, sens in defaults:
         ensure_field_definition(conn, k, label, dt, cat, sens, commit=False)

@@ -150,7 +150,7 @@ def get_documents_view(page: ft.Page):
         return (root + ext).lower()
 
     # 3. HELPER FUNCTIONS
-    async def open_doc_async(path: str | None, human_name: str = "record.pdf"):
+    async def open_doc_async(path: str | None, display_name: str = "record.pdf"):
         if not path or not os.path.exists(path):
             show_snack(page, "File not found.", "red")
             return
@@ -164,7 +164,7 @@ def get_documents_view(page: ft.Page):
             plaintext = decrypt_bytes(fmk, ciphertext)
 
             # Write temp PDF
-            safe_name = human_name if human_name.lower().endswith(".pdf") else f"{human_name}.pdf"
+            safe_name = display_name if display_name.lower().endswith(".pdf") else f"{display_name}.pdf"
             tmp_dir = tempfile.gettempdir()
             tmp_path = os.path.join(tmp_dir, f"lpa_decrypted_{patient_id}_{int(datetime.now().timestamp())}.pdf")
             with open(tmp_path, "wb") as f:
@@ -179,8 +179,8 @@ def get_documents_view(page: ft.Page):
             show_snack(page, f"Open failed: {ex}", "red")
 
     def open_doc_click(e: ft.ControlEvent):
-        enc_path, human_name = e.control.data
-        asyncio.create_task(open_doc_async(enc_path, human_name))
+        enc_path, display_name = e.control.data
+        asyncio.create_task(open_doc_async(enc_path, display_name))
 
     def delete_handler(e: ft.ControlEvent):
         data = getattr(e.control, "data", None)
@@ -316,7 +316,7 @@ def get_documents_view(page: ft.Page):
             add_document(
                 page.db_connection,
                 patient_id,
-                file_name,     # human label
+                file_name,     
                 enc_path,      # encrypted disk path
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
             )

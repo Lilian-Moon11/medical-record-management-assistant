@@ -22,7 +22,8 @@
 
 from __future__ import annotations
 import flet as ft
-
+import re
+from datetime import date
 from utils import show_snack, themed_panel, s
 from database import (
     # Reports
@@ -62,6 +63,8 @@ def get_labs_view(page: ft.Page):
         page._pending_lab_report_delete = None  # (report_id, label)
     if not hasattr(page, "_pending_lab_result_delete"):
         page._pending_lab_result_delete = None  # (result_id, label)
+    if not hasattr(page, "_labs_report_cache"):
+        page._labs_report_cache = {}  # report_id -> report_row
 
     # ----------------------------
     # Reports table (created early)
@@ -141,7 +144,32 @@ def get_labs_view(page: ft.Page):
         u = unit or ""
         return f"{name}: {val} {u}".strip()
 
-    def _flag_to_human(flag: str | None) -> str:
+    def _parse_value_num(value_text: str | None) -> float | None:
+        """
+        Extract a numeric value from user-entered lab text when it's clearly numeric.
+        Keeps things like '<5', '>200', 'NEG', 'trace' as non-numeric (None) for now.
+        """
+        if not value_text:
+            return None
+
+        t = value_text.strip()
+        if not t:
+            return None
+
+        # Comparators / qualitative values -> leave as text-only for now
+        if any(sym in t for sym in ("<", ">", "<=", ">=")):
+            return None
+
+        m = re.search(r"[-+]?\d[\d,]*\.?\d*", t)
+        if not m:
+            return None
+
+        try:
+            return float(m.group(0).replace(",", ""))
+        except Exception:
+            return None
+    
+    def _flag_result(flag: str | None) -> str:
         if not flag:
             return "Normal / not flagged"
         f = flag.strip().upper()
@@ -226,7 +254,7 @@ def get_labs_view(page: ft.Page):
         page._lab_result_info_title.value = test_name or f"Result #{result_id}"
         page._lab_result_info_body.controls = [
             ft.Text(f"Value: {value_display} {unit or ''}".strip()),
-            ft.Text(f"Flag: {_flag_to_human(flag)}"),
+            ft.Text(f"Flag: {_flag_result(flag)}"),
             ft.Text(f"Date: {result_date or ''}".strip()),
             ft.Divider(),
             ft.Text(f"Reference range: {rr or '(not provided)'}"),
@@ -258,7 +286,11 @@ def get_labs_view(page: ft.Page):
     def _build_report_rows(rows):
         reports_table.rows = []
         for r in rows:
+            # r: (id, source_document_id, collected_date, reported_date, ordering_provider, facility, notes, created_at, updated_at)
             report_id, _doc_id, collected, _reported, ordering_provider, facility, notes, _c, _u = r
+
+            # Cache the full row so we can look up collected/reported dates later
+            page._labs_report_cache[int(report_id)] = r
 
             reports_table.rows.append(
                 ft.DataRow(
@@ -267,6 +299,7 @@ def get_labs_view(page: ft.Page):
                         ft.DataCell(ft.Text(facility or "")),
                         ft.DataCell(ft.Text(ordering_provider or "")),
                         ft.DataCell(ft.Text((notes or "")[:60])),
+
                         ft.DataCell(
                             ft.IconButton(
                                 icon=ft.Icons.EDIT,
@@ -274,18 +307,22 @@ def get_labs_view(page: ft.Page):
                                 on_click=lambda e, rr=r: open_edit_report(rr),
                             )
                         ),
+
                         ft.DataCell(
                             ft.IconButton(
                                 icon=ft.Icons.LIST_ALT,
                                 tooltip="View results",
-                                on_click=lambda e, rid=int(report_id): select_report(rid),
+                                on_click=lambda e, rid=int(r[0]): select_report(rid),
                             )
                         ),
+
                         ft.DataCell(
                             ft.IconButton(
                                 icon=ft.Icons.DELETE,
                                 tooltip="Delete report",
-                                on_click=lambda e, rid=int(report_id), rr=r: open_delete_report(rid, _report_label(rr)),
+                                on_click=lambda e, rid=int(r[0]), rr=r: open_delete_report(
+                                    rid, _report_label(rr)
+                                ),
                             )
                         ),
                     ]
@@ -500,7 +537,6 @@ def get_labs_view(page: ft.Page):
         page._lr_facility = ft.TextField(label="Facility")
         page._lr_notes = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
 
-        # IMPORTANT: define _close BEFORE using it below
         def _close(_=None):
             page._lab_report_edit_dlg.open = False
             page.update()
@@ -538,10 +574,15 @@ def get_labs_view(page: ft.Page):
                         facility=facility,
                         notes=notes,
                     )
-                    show_snack(page, "Lab report updated." if updated else "Lab report not found.", "blue" if updated else "orange")
+                    show_snack(
+                        page,
+                        "Lab report updated." if updated else "Lab report not found.",
+                        "blue" if updated else "orange",
+                    )
 
                 _close()
                 refresh_reports(reports_search_field.value)
+
             except Exception as ex:
                 show_snack(page, f"Save report failed: {ex}", "red")
 
@@ -681,7 +722,7 @@ def get_labs_view(page: ft.Page):
             return page._lab_result_edit_dlg
 
         page._lx_test = ft.TextField(label="Test name*", autofocus=True)
-        page._lx_value_text = ft.TextField(label="Value (text)*")
+        page._lx_value_text = ft.TextField(label="Value (text)*")  # <-- YOU NEED THIS
         page._lx_unit = ft.TextField(label="Unit")
         page._lx_flag = ft.TextField(label="Abnormal flag (H/L/A/N)")
         page._lx_date = ft.TextField(label="Result date (YYYY-MM-DD)")
@@ -690,6 +731,15 @@ def get_labs_view(page: ft.Page):
         def _close(_=None):
             page._lab_result_edit_dlg.open = False
             page.update()
+
+        def _default_result_date_for_report(report_id: int) -> str:
+            cached = page._labs_report_cache.get(int(report_id))
+            if cached:
+                _id, _doc, collected, reported, *_rest = cached
+                d = (collected or reported or "").strip()
+                if d:
+                    return d
+            return date.today().isoformat()
 
         def _save(_=None):
             test_name = (page._lx_test.value or "").strip()
@@ -712,8 +762,15 @@ def get_labs_view(page: ft.Page):
 
                 unit = (page._lx_unit.value or "").strip() or None
                 flag = (page._lx_flag.value or "").strip() or None
-                rdate = (page._lx_date.value or "").strip() or None
                 notes = (page._lx_notes.value or "").strip() or None
+
+                # Trend-friendly numeric extraction
+                value_num = _parse_value_num(value_text)
+
+                # Trend-friendly date defaulting
+                rdate = (page._lx_date.value or "").strip() or None
+                if not rdate:
+                    rdate = _default_result_date_for_report(int(report_id))
 
                 if result_id is None:
                     new_id = add_lab_result(
@@ -722,7 +779,7 @@ def get_labs_view(page: ft.Page):
                         int(report_id),
                         test_name=test_name,
                         value_text=value_text,
-                        value_num=None,
+                        value_num=value_num,
                         unit=unit,
                         ref_range_text=None,
                         ref_low=None,
@@ -741,7 +798,7 @@ def get_labs_view(page: ft.Page):
                         int(result_id),
                         test_name=test_name,
                         value_text=value_text,
-                        value_num=None,
+                        value_num=value_num,  # <-- keep numeric data on edits
                         unit=unit,
                         ref_range_text=None,
                         ref_low=None,
@@ -751,13 +808,9 @@ def get_labs_view(page: ft.Page):
                         result_date=rdate,
                         notes=notes,
                     )
-                    if updated:
-                        show_snack(page, "Result updated.", "blue")
-                    else:
-                        show_snack(page, "Result not found.", "orange")
+                    show_snack(page, "Result updated." if updated else "Result not found.", "blue" if updated else "orange")
 
                 _close()
-
                 select_report(int(report_id))
 
             except Exception as ex:
