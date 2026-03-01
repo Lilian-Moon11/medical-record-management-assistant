@@ -35,7 +35,7 @@
 
 import flet as ft
 
-from utils import s, show_snack
+from utils.ui_helpers import s, show_snack
 
 from core import app_state
 from ui import routing, navigation, dialogs, login

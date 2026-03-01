@@ -42,7 +42,7 @@ from database import (
     delete_document,
     get_document_path,
 )
-from utils import s, show_snack
+from utils.ui_helpers import s, show_snack
 
 
 def get_documents_view(page: ft.Page):

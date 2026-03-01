@@ -18,7 +18,7 @@
 from __future__ import annotations
 import flet as ft
 
-from utils import show_snack, themed_panel, s
+from utils.ui_helpers import show_snack, themed_panel, s
 from database import (
     list_providers,
     create_provider,

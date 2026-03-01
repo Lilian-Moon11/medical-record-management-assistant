@@ -52,7 +52,7 @@ from database import (
     update_profile,
     get_profile,
 )
-from utils import (
+from utils.ui_helpers import (
     s,
     themed_panel,
     show_snack,
@@ -719,8 +719,7 @@ def get_health_record_view(page: ft.Page):
                 ("name", "Condition"),
                 ("onset_date", "Onset Date"),
                 ("diagnosis_date", "Diagnosis Date"),
-                ("symptoms", "Primary Symptoms"),
-                ("status", "Status (Active/Resolved)"),
+                ("symptoms", "Symptoms"),
                 ("notes", "Notes")
             ],
             is_section_sensitive=is_sens("section.other"), # Grouped under "Other" shield

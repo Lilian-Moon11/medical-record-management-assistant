@@ -12,8 +12,10 @@
 # -----------------------------------------------------------------------------
 
 import flet as ft
+import os
 from database import update_profile, create_profile, get_profile
-from utils import s, themed_panel, show_snack
+from utils.ui_helpers import s, themed_panel, show_snack
+from utils.pdf_gen import generate_summary_pdf
 
 def get_overview_view(page: ft.Page):
     """
@@ -23,6 +25,14 @@ def get_overview_view(page: ft.Page):
     patient = page.current_profile
     if patient is None:
         return _create_profile_ui(page)
+
+    def handle_generate_pdf(e):
+        try:
+            path = generate_summary_pdf(page.db_connection, patient[0])
+            show_snack(page, "PDF Generated! Opening...", "green")
+            os.startfile(path) # This opens the PDF in the system default viewer
+        except Exception as ex:
+            show_snack(page, f"PDF Error: {ex}", "red")
 
     # 2. Logic for "Edit Mode"
     # We define this internal helper to switch the UI to text fields.
@@ -95,6 +105,12 @@ def get_overview_view(page: ft.Page):
                             ]
                         ),
                         ft.Container(expand=True),
+                        ft.FilledButton(
+                            "Generate Summary", 
+                            icon=ft.Icons.PICTURE_AS_PDF, 
+                            on_click=handle_generate_pdf
+                        ),
+                        ft.VerticalDivider(width=10),
                         ft.Button("Edit", icon=ft.Icons.EDIT, on_click=edit_mode_toggle),
                     ]
                 ),

@@ -25,7 +25,7 @@
 
 import flet as ft
 from database import get_setting, set_setting
-from utils import s, show_snack, run_async, copy_with_snack
+from utils.ui_helpers import s, show_snack, run_async, copy_with_snack
 from crypto.keybag import verify_password, rotate_recovery_key, generate_recovery_key_b64
 
 

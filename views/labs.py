@@ -24,7 +24,7 @@ from __future__ import annotations
 import flet as ft
 import re
 from datetime import date
-from utils import show_snack, themed_panel, s
+from utils.ui_helpers import show_snack, themed_panel, s
 from database import (
     # Reports
     list_lab_reports,

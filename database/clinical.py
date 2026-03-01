@@ -76,16 +76,35 @@ def delete_provider(conn, patient_id, provider_id):
     return cur.rowcount
 
 # Labs
-def list_lab_reports(conn, patient_id, search=None, limit=200):
+def list_lab_results_for_report(conn, patient_id, report_id, search_test=None, limit=500):
+    cur = conn.cursor()
+    params = [patient_id, report_id]
+    sql = "SELECT id, test_name, value_text, value_num, unit, ref_range_text, ref_low, ref_high, ref_unit, abnormal_flag, result_date, notes, created_at, updated_at FROM lab_results WHERE patient_id = ? AND report_id = ?"
+    if search_test:
+        sql += " AND test_name LIKE ?"
+        params.append(_like(search_test))
+    sql += " ORDER BY test_name ASC LIMIT ?"
+    params.append(limit)
+    cur.execute(sql, tuple(params))
+    return cur.fetchall()
+
+def list_lab_reports(conn, patient_id, search=None, limit=500):
     cur = conn.cursor()
     params = [patient_id]
-    sql = "SELECT id, source_document_id, collected_date, reported_date, ordering_provider, facility, notes, created_at, updated_at FROM lab_reports WHERE patient_id = ?"
+    sql = """
+        SELECT id, source_document_id, collected_date, reported_date, 
+               ordering_provider, facility, notes, created_at, updated_at 
+        FROM lab_reports 
+        WHERE patient_id = ?
+    """
     if search:
         q = _like(search)
-        sql += " AND (facility LIKE ? OR ordering_provider LIKE ?)"
-        params.extend([q, q])
+        sql += " AND (facility LIKE ? OR ordering_provider LIKE ? OR notes LIKE ?)"
+        params.extend([q, q, q])
+    
     sql += " ORDER BY collected_date DESC, id DESC LIMIT ?"
     params.append(limit)
+    
     cur.execute(sql, tuple(params))
     return cur.fetchall()
 
@@ -114,18 +133,6 @@ def delete_lab_report(conn, patient_id, report_id):
     cur.execute("DELETE FROM lab_reports WHERE id = ? AND patient_id = ?", (report_id, patient_id))
     conn.commit()
     return cur.rowcount
-
-def list_lab_results_for_report(conn, patient_id, report_id, search_test=None, limit=500):
-    cur = conn.cursor()
-    params = [patient_id, report_id]
-    sql = "SELECT id, test_name, value_text, value_num, unit, ref_range_text, ref_low, ref_high, ref_unit, abnormal_flag, result_date, notes FROM lab_results WHERE patient_id = ? AND report_id = ?"
-    if search_test:
-        sql += " AND test_name LIKE ?"
-        params.append(_like(search_test))
-    sql += " ORDER BY test_name ASC LIMIT ?"
-    params.append(limit)
-    cur.execute(sql, tuple(params))
-    return cur.fetchall()
 
 def add_lab_result(conn, patient_id, report_id, **kwargs):
     cur = conn.cursor()

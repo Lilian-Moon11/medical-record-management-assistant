@@ -21,7 +21,7 @@
 # - Updating accessibility-related page state (is_high_contrast, ui_scale)
 # - Refreshing the currently displayed view when the dashboard shell exists
 # - Returning a page-bound get_view_for_index(index) function that:
-#   - Routes to Overview / Patient Info / Documents / Settings views
+#   - Routes to Overview / Health Record / Documents / Settings views
 #   - Wraps view creation in a friendly error screen with traceback for debugging
 # -----------------------------------------------------------------------------
 
@@ -33,7 +33,7 @@ from database import get_setting
 from core import app_state
 from views.documents import get_documents_view
 from views.overview import get_overview_view
-from views.patient_info import get_patient_info_view
+from views.health_record import get_health_record_view
 from views.settings import get_settings_view
 from views.providers import get_providers_view
 from views.labs import get_labs_view
@@ -88,7 +88,7 @@ def make_get_view_for_index(page, *, apply_settings_callback):
                 [
                     ft.Icon(ft.Icons.LOCK, size=40, color="red"),
                     ft.Text("Vault is locked.", size=20, weight="bold"),
-                    ft.Text("Please log in to access patient data."),
+                    ft.Text("Please log in to access your health record"),
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -98,7 +98,7 @@ def make_get_view_for_index(page, *, apply_settings_callback):
             if index == 0:
                 return get_overview_view(page)
             elif index == 1:
-                return get_patient_info_view(page)
+                return get_health_record_view(page)
             elif index == 2:
                 return get_labs_view(page)
             elif index == 3:

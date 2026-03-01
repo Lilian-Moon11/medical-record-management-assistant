@@ -48,7 +48,7 @@ from database import (
 )
 from crypto.keybag import set_new_password, generate_recovery_key_b64, rotate_recovery_key
 from core.startup import run_self_test
-from utils import run_async, copy_with_snack, is_sensitive_flag, detect_data_type_from_label, slugify_label, clean_lbl, s, show_snack
+from utils.ui_helpers import run_async, copy_with_snack, is_sensitive_flag, detect_data_type_from_label, slugify_label, clean_lbl, s, show_snack
 
 def ensure_sensitive_dialogs_registered(page: ft.Page, *, s, show_snack):
     if getattr(page, "_sensitive_dlg", None) is not None:
