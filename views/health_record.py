@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # PURPOSE:
 # Patient Info view builder + UI state for editable profile fields and JSON-list
-# sections (Allergies, Medications, Insurance) with optional “shield” sensitivity
+# sections (Allergies, Medications, Insurance) with optional shield sensitivity
 # controls.
 #
 # This module renders the full Patient Info screen and provides:
@@ -16,7 +16,7 @@
 #   and saved values, groups fields into Demographics + custom categories, and
 #   mounts each section into themed panels.
 # - JSON list editors (`ListEditorBody` / `ListRow`) for structured lists stored
-#   as JSON (add/save/delete rows), with an optional master “reveal/hide” toggle
+#   as JSON (add/save/delete rows), with an optional master reveal/hide toggle
 #   that masks values when a section is marked sensitive.
 # - Category tables (`CategoryPanel`) for single-value fields (core + custom),
 #   supporting label edits for custom fields, value persistence, and guarded
@@ -29,7 +29,7 @@
 # - Uses DB field definitions + patient field map to drive UI composition.
 # - Persists edits via `update_profile` for core fields and
 #   `upsert_patient_field_value` for custom/list values.
-# - Sensitivity (“shield”) is controlled by special section/list keys
+# - Sensitivity (shield) is controlled by special section/list keys
 #   (e.g., `section.demographics`, `section.other`, `allergyintolerance.list`);
 #   when enabled, values default to masked until explicitly revealed.
 # - Deletions are confirmed (list rows) or routed through the shared delete-field
@@ -53,7 +53,7 @@ from database import (
     get_profile,
 )
 from utils.ui_helpers import (
-    s,
+    pt_scale,
     themed_panel,
     show_snack,
     is_sensitive_flag,
@@ -121,7 +121,7 @@ class ListRow(ft.Container):
         item: dict,
         columns: List[Tuple[str, str]],
     ):
-        super().__init__(padding=s(page, 8))
+        super().__init__(padding=pt_scale(page, 8))
         self._page = page
         self.parent_panel = parent_panel
         self.columns = columns
@@ -239,7 +239,7 @@ class ListEditorBody(ft.Column):
         is_section_sensitive: bool,
         on_save: Callable[[List[dict]], None],
     ):
-        super().__init__(tight=True, spacing=s(page, 10))
+        super().__init__(tight=True, spacing=pt_scale(page, 10))
         self._page = page
         self.patient_id = patient_id
         self.field_key = field_key
@@ -250,7 +250,7 @@ class ListEditorBody(ft.Column):
         _ensure_sets(page)
         self.panel_revealed = self._page._panel_vis.get(self.field_key, True)
 
-        self.rows_col = ft.Column(spacing=s(page, 8), tight=True)
+        self.rows_col = ft.Column(spacing=pt_scale(page, 8), tight=True)
         self.row_components: List[ListRow] = []
 
         for it in items:
@@ -258,7 +258,7 @@ class ListEditorBody(ft.Column):
 
         self.add_btn = ft.FilledButton("Add", icon=ft.Icons.ADD, on_click=self.add_row)
 
-        header_controls: List[Any] = [ft.Text(title, size=s(page, 18), weight="bold")]
+        header_controls: List[Any] = [ft.Text(title, size=pt_scale(page, 18), weight="bold")]
 
         # Add panel master eye ONLY if feature is ON
         if self.is_section_sensitive:
@@ -328,7 +328,7 @@ class CategoryPanel(ft.Column):
         value_map: dict,
         is_section_sensitive: bool
     ):
-        super().__init__(tight=True, spacing=s(page, 6))
+        super().__init__(tight=True, spacing=pt_scale(page, 6))
         self._page = page
         self.patient_id = patient_id
         self.category_name = category_name
@@ -361,7 +361,7 @@ class CategoryPanel(ft.Column):
         for d in defs_list:
             self.table.rows.append(self.create_row(d))
 
-        header_controls = [ft.Text(self.category_name, size=s(page, 18), weight="bold")]
+        header_controls = [ft.Text(self.category_name, size=pt_scale(page, 18), weight="bold")]
 
         if self.is_section_sensitive:
             self.cat_eye_btn = make_eye_btn(self._page, revealed=self.panel_revealed)
@@ -422,13 +422,13 @@ class CategoryPanel(ft.Column):
             field_tf = ft.TextField(
                 value=clean_lbl(label),
                 dense=True,
-                width=s(self._page, 200),
+                width=pt_scale(self._page, 200),
                 read_only=True,
                 border=ft.InputBorder.NONE,
                 text_style=ft.TextStyle(weight="bold", color="grey"),
             )
         else:
-            field_tf = ft.TextField(value=clean_lbl(label), dense=True, width=s(self._page, 200))
+            field_tf = ft.TextField(value=clean_lbl(label), dense=True, width=pt_scale(self._page, 200))
 
         default_vis = not self.is_section_sensitive
         row_revealed = self._page._field_vis.get(row_id, default_vis)
@@ -438,7 +438,7 @@ class CategoryPanel(ft.Column):
             password=not row_revealed if self.is_section_sensitive else False,
             can_reveal_password=False,
             dense=True,
-            width=s(self._page, 250),
+            width=pt_scale(self._page, 250),
         )
 
         eye_btn = None
@@ -468,7 +468,7 @@ class CategoryPanel(ft.Column):
         if eye_btn:
             val_cell_controls.append(eye_btn)
             
-        val_cell = ft.Row(val_cell_controls, spacing=s(self._page, 4))
+        val_cell = ft.Row(val_cell_controls, spacing=pt_scale(self._page, 4))
 
         src_text = ft.Text(src)
         upd_text = ft.Text(upd)
@@ -660,9 +660,9 @@ def get_health_record_view(page: ft.Page):
             value_map,
             is_section_sensitive=is_sens("section.demographics")
         ),
-        padding=s(page, 12),
+        padding=pt_scale(page, 12),
     )
-    sections += [demographics_panel, ft.Container(height=s(page, 10))]
+    sections += [demographics_panel, ft.Container(height=pt_scale(page, 10))]
 
     allergies_panel = themed_panel(
         page,
@@ -676,9 +676,9 @@ def get_health_record_view(page: ft.Page):
             is_section_sensitive=is_sens(allergies_key),
             on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, allergies_key, json.dumps(items), "user"),
         ),
-        padding=s(page, 12),
+        padding=pt_scale(page, 12),
     )
-    sections += [allergies_panel, ft.Container(height=s(page, 10))]
+    sections += [allergies_panel, ft.Container(height=pt_scale(page, 10))]
 
     meds_panel = themed_panel(
         page,
@@ -701,9 +701,9 @@ def get_health_record_view(page: ft.Page):
                 page.db_connection, patient_id, meds_key, json.dumps(items), "user"
             ),
         ),
-        padding=s(page, 12),
+        padding=pt_scale(page, 12),
     )
-    sections += [meds_panel, ft.Container(height=s(page, 10))]
+    sections += [meds_panel, ft.Container(height=pt_scale(page, 10))]
 
     conditions_key = "conditions.list"
     # Add this to your sections list:
@@ -727,10 +727,10 @@ def get_health_record_view(page: ft.Page):
                 page.db_connection, patient_id, conditions_key, json.dumps(items), "user"
             ),
         ),
-        padding=s(page, 12),
+        padding=pt_scale(page, 12),
     )
 
-    sections += [conditions_panel, ft.Container(height=s(page, 10))]
+    sections += [conditions_panel, ft.Container(height=pt_scale(page, 10))]
 
     surgeries_key = "procedures.list"
     surgeries_panel = themed_panel(
@@ -752,10 +752,10 @@ def get_health_record_view(page: ft.Page):
                 page.db_connection, patient_id, surgeries_key, json.dumps(items), "user"
             ),
         ),
-        padding=s(page, 12),
+        padding=pt_scale(page, 12),
     )
 
-    sections += [surgeries_panel, ft.Container(height=s(page, 10))]
+    sections += [surgeries_panel, ft.Container(height=pt_scale(page, 10))]
 
     insurance_panel = themed_panel(
         page,
@@ -777,9 +777,9 @@ def get_health_record_view(page: ft.Page):
             is_section_sensitive=is_sens(insurance_key),
             on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, insurance_key, json.dumps(items), "user"),
         ),
-        padding=s(page, 12),
+        padding=pt_scale(page, 12),
     )
-    sections += [insurance_panel, ft.Container(height=s(page, 10))]
+    sections += [insurance_panel, ft.Container(height=pt_scale(page, 10))]
 
     def _cat_sort(n: str):
         return 99 if n.lower() == "other" else 10
@@ -796,16 +796,16 @@ def get_health_record_view(page: ft.Page):
             # Assigning custom categories to the "section.other" master switch
             is_section_sensitive=is_sens("section.other") 
         )
-        sections.append(themed_panel(page, panel, padding=s(page, 12)))
-        sections.append(ft.Container(height=s(page, 10)))
+        sections.append(themed_panel(page, panel, padding=pt_scale(page, 12)))
+        sections.append(ft.Container(height=pt_scale(page, 10)))
 
     return ft.Container(
-        padding=s(page, 20),
+        padding=pt_scale(page, 20),
         content=ft.ListView(
             controls=[
                 ft.Row(
                     [
-                        ft.Text("Health Record", size=s(page, 22), weight="bold"),
+                        ft.Text("Health Record", size=pt_scale(page, 22), weight="bold"),
                         ft.Container(expand=True),
                         ft.FilledTonalButton(
                             "Edit Sensitivity",
@@ -818,7 +818,7 @@ def get_health_record_view(page: ft.Page):
                 *sections,
             ],
             expand=True,
-            spacing=s(page, 12),
+            spacing=pt_scale(page, 12),
             auto_scroll=False,
         ),
     )

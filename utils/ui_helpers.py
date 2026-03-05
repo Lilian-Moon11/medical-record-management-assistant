@@ -14,7 +14,7 @@
 # behavior consistent, reduce duplication, and support accessibility features.
 #
 # Includes:
-# - Scale-safe sizing helpers that respect the user’s UI scale preference
+# - Scale-safe sizing helpers that respect the users UI scale preference
 # - Centralized snackbar messaging (create-once, reuse) with defensive handling
 # - Async helpers for running coroutines from sync event handlers
 # - Clipboard copy utilities with user feedback (snackbar success/failure)
@@ -24,7 +24,7 @@
 #   - data-type detection from human labels
 #   - slug generation for stable field keys
 #   - label cleanup and sensitive-flag parsing
-# - Small UI affordances (e.g., “reveal/hide” eye icon button)
+# - Small UI affordances (e.g., reveal/hide eye icon button)
 # -----------------------------------------------------------------------------
 
 import flet as ft
@@ -57,7 +57,7 @@ def clean_lbl(lbl: str) -> str:
     s = s.replace("(JSON)", "")
     return s.strip()
 
-def s(page: ft.Page, px: int) -> int:
+def pt_scale(page: ft.Page, px: int) -> int:
     """Scale-safe sizing helper."""
     scale = getattr(page, "ui_scale", 1.0)
     if scale is None:
@@ -131,7 +131,7 @@ def themed_panel(page: ft.Page, content, padding=None, radius=6):
     hc = getattr(page, "is_high_contrast", False)
 
     if padding is None:
-        padding = s(page, 15)
+        padding = pt_scale(page, 15)
 
     if hc:
         if isinstance(content, ft.Text) and content.color is None:

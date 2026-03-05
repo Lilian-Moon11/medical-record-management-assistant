@@ -25,7 +25,7 @@
 
 import flet as ft
 from database import get_setting, set_setting
-from utils.ui_helpers import s, show_snack, run_async, copy_with_snack
+from utils.ui_helpers import pt_scale, show_snack, run_async, copy_with_snack
 from crypto.keybag import verify_password, rotate_recovery_key, generate_recovery_key_b64
 
 
@@ -366,10 +366,10 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
     # 4. Return Layout
     return ft.Container(
-        padding=s(page, 20),
+        padding=pt_scale(page, 20),
         content=ft.Column(
             [
-                ft.Text("Settings", size=s(page, 24), weight="bold"),
+                ft.Text("Settings", size=pt_scale(page, 24), weight="bold"),
                 ft.Divider(),
                 theme_dd,
                 hc_switch,
@@ -382,13 +382,13 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 ft.Text(
                     "Note: High Contrast mode overrides the Theme selection.", 
                     color=ft.Colors.GREY, 
-                    size=s(page, 14)
+                    size=pt_scale(page, 14)
                 ),
                 ft.Divider(),
-                ft.Text("Recovery Key", size=s(page, 18), weight="bold"),
+                ft.Text("Recovery Key", size=pt_scale(page, 18), weight="bold"),
                 ft.Text(
                     "Rotate your recovery key if you think it may be exposed, or just periodically.",
-                    size=s(page, 14),
+                    size=pt_scale(page, 14),
                     color=ft.Colors.GREY,
                 ),
                 current_pwd_field,

@@ -18,7 +18,7 @@
 from __future__ import annotations
 import flet as ft
 
-from utils.ui_helpers import show_snack, themed_panel, s
+from utils.ui_helpers import show_snack, themed_panel, pt_scale
 from database import (
     list_providers,
     create_provider,
@@ -55,10 +55,10 @@ def get_providers_view(page: ft.Page):
             ft.DataColumn(ft.Text("Delete")),
         ],
         rows=[],
-        column_spacing=s(page, 14),
-        heading_row_height=s(page, 40),
-        data_row_min_height=s(page, 40),
-        data_row_max_height=s(page, 52),
+        column_spacing=pt_scale(page, 14),
+        heading_row_height=pt_scale(page, 40),
+        data_row_min_height=pt_scale(page, 40),
+        data_row_max_height=pt_scale(page, 52),
         border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
         if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
         border_radius=8,
@@ -129,7 +129,7 @@ def get_providers_view(page: ft.Page):
         label="Search providers",
         prefix_icon=ft.Icons.SEARCH,
         dense=True,
-        width=s(page, 340),
+        width=pt_scale(page, 340),
         on_submit=do_search,  # Enter triggers search
     )
 
@@ -223,7 +223,7 @@ def get_providers_view(page: ft.Page):
             modal=False,
             title=ft.Text("Provider"),
             content=ft.Container(
-                width=s(page, 520),
+                width=pt_scale(page, 520),
                 content=ft.Column(
                     [
                         page._prov_name,
@@ -372,6 +372,6 @@ def get_providers_view(page: ft.Page):
             expand=True,
             scroll=True,
         ),
-        padding=s(page, 16),
+        padding=pt_scale(page, 16),
         radius=10,
     )

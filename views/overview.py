@@ -12,137 +12,148 @@
 # -----------------------------------------------------------------------------
 
 import flet as ft
-import os
-from database import update_profile, create_profile, get_profile
-from utils.ui_helpers import s, themed_panel, show_snack
-from utils.pdf_gen import generate_summary_pdf
+from database.patient import update_profile, get_profile
+from utils.ui_helpers import pt_scale, themed_panel, show_snack 
+from utils.pdf_gen import generate_summary_pdf 
+from ui.wizards.paperwork_wizard import PaperworkWizard
 
 def get_overview_view(page: ft.Page):
-    """
-    Main entry point for the Overview tab.
-    """
-    # 1. Validation: Ensure we actually have a patient loaded.
     patient = page.current_profile
     if patient is None:
         return _create_profile_ui(page)
 
+    # Logic: Inline Notes Save
+    def save_notes(e):
+        try:
+            update_profile(
+                page.db_connection,
+                patient[0], # id
+                patient[1], # name (keep same)
+                patient[2], # dob (keep same)
+                notes_input.value,
+            )
+            page.current_profile = get_profile(page.db_connection)
+            show_snack(page, "Notes saved successfully.", "green")
+        except Exception as ex:
+            show_snack(page, f"Error saving notes: {ex}", "red")
+
+    # Logic: PDF Summary Trigger (2.1)
     def handle_generate_pdf(e):
+        import os
         try:
             path = generate_summary_pdf(page.db_connection, patient[0])
-            show_snack(page, "PDF Generated! Opening...", "green")
-            os.startfile(path) # This opens the PDF in the system default viewer
+            show_snack(page, "PDF Generated!", "green")
+            os.startfile(path)
         except Exception as ex:
             show_snack(page, f"PDF Error: {ex}", "red")
 
-    # 2. Logic for "Edit Mode"
-    # We define this internal helper to switch the UI to text fields.
-    def edit_mode_toggle(e):
-        # Pre-fill inputs with current data
-        # patient = (id, name, dob, notes)
-        name_input.value = patient[1]
-        dob_input.value = patient[2]
-        notes_input.value = patient[3]
+    def start_paperwork_wizard(e):
+        wizard = PaperworkWizard(page)
+        wizard.open()
 
-        def save_changes(ev):
-            try:
-                # DB Update
-                update_profile(
-                    page.db_connection,
-                    patient[0], # ID
-                    name_input.value,
-                    dob_input.value,
-                    notes_input.value,
-                )
-                
-                # Update global state so other tabs see the new name immediately
-                # (We perform a fresh DB fetch to be safe)
-                page.current_profile = get_profile(page.db_connection)
-                
-                # Refresh the view to show Read-Only mode again
-                page.content_area.content = get_overview_view(page)
-                page.content_area.update()
-                show_snack(page, "Profile updated successfully.")
-            except Exception as ex:
-                show_snack(page, f"Error: {ex}", "red")
+    # Define the notes input with its own save button
+    notes_input = ft.TextField(
+        value=patient[3] or "",
+        label="",
+        multiline=True,
+        min_lines=5,
+        max_lines=10,
+        expand=True,
+    )
 
-        def cancel_edit(_):
-            page.content_area.content = get_overview_view(page)
-            page.content_area.update()
+    notes_section = themed_panel(
+        page,
+        ft.Column([
+            ft.Row([
+                ft.Text("Notes", weight="bold", size=pt_scale(page, 18)),
+                ft.IconButton(ft.Icons.SAVE, tooltip="Save Notes", on_click=save_notes)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            notes_input
+        ])
+    )
 
-        # Swap the view content to the Edit Form
-        page.content_area.content = ft.Container(
-            padding=s(page, 20),
-            content=ft.Column([
-                ft.Text("Edit Profile", size=s(page, 30), weight="bold"),
-                name_input,
-                dob_input,
-                notes_input,
-                ft.Row([
-                    ft.Button("Save Changes", on_click=save_changes),
-                    ft.Button("Cancel", on_click=cancel_edit, color="red"),
-                ])
-            ])
-        )
-        page.content_area.update()
-
-    # 3. Define Controls (reused in both modes)
-    name_input = ft.TextField(label="Full Name")
-    dob_input = ft.TextField(label="Date of Birth (YYYY-MM-DD)")
-    notes_input = ft.TextField(label="Medical Notes", multiline=True, height=150)
-
-    # 4. Return the "Read-Only" Dashboard Layout
     return ft.Container(
-        padding=s(page, 20),
+        padding=pt_scale(page, 20),
         content=ft.Column(
             [
+                # Header Section
                 ft.Row(
                     [
-                        ft.Icon(ft.Icons.ACCOUNT_CIRCLE, size=s(page, 80), color=ft.Colors.BLUE_GREY),
+                        ft.Icon(ft.Icons.ACCOUNT_CIRCLE, size=pt_scale(page, 60), color=ft.Colors.BLUE_GREY),
                         ft.Column(
                             [
-                                ft.Text(patient[1], size=s(page, 30), weight="bold"),
-                                ft.Text(f"DOB: {patient[2] or '(not set)'}", size=s(page, 16)),
-                            ]
+                                ft.Text(patient[1], size=pt_scale(page, 26), weight="bold"),
+                                ft.Text(f"DOB: {patient[2] or '(not set)'}", size=pt_scale(page, 14)),
+                            ],
+                            spacing=0
                         ),
                         ft.Container(expand=True),
+                        # Action Buttons
+                        ft.FilledButton(
+                            "Complete Paperwork", 
+                            icon=ft.Icons.ASSIGNMENT_OUTLINED, 
+                            on_click=start_paperwork_wizard
+                        ),
+                        ft.Container(width=pt_scale(page, 10)),
                         ft.FilledButton(
                             "Generate Summary", 
                             icon=ft.Icons.PICTURE_AS_PDF, 
                             on_click=handle_generate_pdf
                         ),
-                        ft.VerticalDivider(width=10),
-                        ft.Button("Edit", icon=ft.Icons.EDIT, on_click=edit_mode_toggle),
-                    ]
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 ft.Divider(),
-                ft.Text("Medical Summary / Notes", weight="bold", size=s(page, 18)),
-                # Use themed_panel so this box looks correct in High Contrast mode
-                themed_panel(page, ft.Text(patient[3] or "", size=s(page, 16)), padding=s(page, 15)),
-            ]
+                
+                # Dashboard Content
+                ft.ResponsiveRow([
+                    ft.Column([notes_section], col={"sm": 12, "md": 8}),
+                    # Future: Add a "Pinned Meds" or "Pinned Conditions" card here in col 4
+                ])
+            ],
+            scroll=ft.ScrollMode.AUTO
         ),
+
+        
     )
 
-def _create_profile_ui(page):
+def _create_profile_ui(page: ft.Page):
     """
     Sub-view: Shown ONLY if the database is empty (first run).
     """
-    name_input = ft.TextField(label="Full Name")
-    dob_input = ft.TextField(label="Date of Birth")
-    notes_input = ft.TextField(label="Notes", multiline=True)
+    name_input = ft.TextField(label="Full Name", autofocus=True)
+    dob_input = ft.TextField(label="Date of Birth (YYYY-MM-DD)")
+    notes_input = ft.TextField(label="Initial Medical Notes", multiline=True, min_lines=3)
 
     def do_create(e):
-        if not name_input.value: return
-        create_profile(page.db_connection, name_input.value, dob_input.value, notes_input.value)
+        if not name_input.value:
+            return show_snack(page, "Name is required to create a profile.", "red")
         
-        # Reload profile and refresh
+        # Create the record in the encrypted DB
+        create_profile(
+            page.db_connection, 
+            name_input.value, 
+            dob_input.value, 
+            notes_input.value
+        )
+        
+        # Reload the global profile state
         page.current_profile = get_profile(page.db_connection)
         
-        # Redirect to main dashboard
+        # Refresh the view to the main Dashboard
         page.content_area.content = get_overview_view(page)
         page.content_area.update()
+        show_snack(page, "Profile created successfully!", "green")
 
-    return ft.Column([
-        ft.Text("Welcome! Create Patient Profile", size=s(page, 24)),
-        name_input, dob_input, notes_input,
-        ft.Button("Create", on_click=do_create)
-    ])
+    return ft.Container(
+        padding=pt_scale(page, 40),
+        content=ft.Column([
+            ft.Text("Welcome! Create Your Patient Profile", size=pt_scale(page, 28), weight="bold"),
+            ft.Text("This data stays local and encrypted on your device.", italic=True),
+            ft.Divider(),
+            name_input,
+            dob_input,
+            notes_input,
+            ft.FilledButton("Create Profile", icon=ft.Icons.SAVE, on_click=do_create)
+        ], spacing=pt_scale(page, 20))
+    )

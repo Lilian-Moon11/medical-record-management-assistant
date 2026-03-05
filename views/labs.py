@@ -24,7 +24,7 @@ from __future__ import annotations
 import flet as ft
 import re
 from datetime import date
-from utils.ui_helpers import show_snack, themed_panel, s
+from utils.ui_helpers import show_snack, themed_panel, pt_scale
 from database import (
     # Reports
     list_lab_reports,
@@ -80,10 +80,10 @@ def get_labs_view(page: ft.Page):
             ft.DataColumn(ft.Text("Delete")),
         ],
         rows=[],
-        column_spacing=s(page, 14),
-        heading_row_height=s(page, 40),
-        data_row_min_height=s(page, 40),
-        data_row_max_height=s(page, 56),
+        column_spacing=pt_scale(page, 14),
+        heading_row_height=pt_scale(page, 40),
+        data_row_min_height=pt_scale(page, 40),
+        data_row_max_height=pt_scale(page, 56),
         border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
         if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
         border_radius=8,
@@ -106,10 +106,10 @@ def get_labs_view(page: ft.Page):
             ft.DataColumn(ft.Text("Delete")),
         ],
         rows=[],
-        column_spacing=s(page, 14),
-        heading_row_height=s(page, 40),
-        data_row_min_height=s(page, 40),
-        data_row_max_height=s(page, 56),
+        column_spacing=pt_scale(page, 14),
+        heading_row_height=pt_scale(page, 40),
+        data_row_min_height=pt_scale(page, 40),
+        data_row_max_height=pt_scale(page, 56),
         border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
         if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
         border_radius=8,
@@ -195,7 +195,7 @@ def get_labs_view(page: ft.Page):
             modal=True,
             title=page._lab_result_info_title,
             content=ft.Container(
-                width=s(page, 520),
+                width=pt_scale(page, 520),
                 content=page._lab_result_info_body,
             ),
             actions=[ft.FilledButton("Close", icon=ft.Icons.CLOSE, on_click=_close)],
@@ -266,7 +266,7 @@ def get_labs_view(page: ft.Page):
 
     def _abnormal_icon(flag: str | None) -> ft.Control:
         if not flag:
-            return ft.Container(width=s(page, 24))
+            return ft.Container(width=pt_scale(page, 24))
 
         f = flag.strip().upper()
 
@@ -278,7 +278,7 @@ def get_labs_view(page: ft.Page):
             return ft.Icon(ft.Icons.REPORT_PROBLEM_OUTLINED, tooltip="Abnormal", color="red")
 
         # N or anything else -> show nothing (keeps alignment)
-        return ft.Container(width=s(page, 24))
+        return ft.Container(width=pt_scale(page, 24))
 
     # ----------------------------
     # Build rows (no update calls)
@@ -475,7 +475,7 @@ def get_labs_view(page: ft.Page):
         label="Search reports (facility, provider, notes)",
         prefix_icon=ft.Icons.SEARCH,
         dense=True,
-        width=s(page, 420),
+        width=pt_scale(page, 420),
         on_submit=do_reports_search,
     )
 
@@ -505,7 +505,7 @@ def get_labs_view(page: ft.Page):
         label="Search results by test name",
         prefix_icon=ft.Icons.SEARCH,
         dense=True,
-        width=s(page, 340),
+        width=pt_scale(page, 340),
         on_submit=do_results_search,
     )
 
@@ -590,7 +590,7 @@ def get_labs_view(page: ft.Page):
             modal=False,
             title=ft.Text("Lab Report"),
             content=ft.Container(
-                width=s(page, 520),
+                width=pt_scale(page, 520),
                 content=ft.Column(
                     [
                         ft.Row([page._lr_collected, page._lr_reported], wrap=True),
@@ -820,7 +820,7 @@ def get_labs_view(page: ft.Page):
             modal=False,
             title=ft.Text("Lab Result"),
             content=ft.Container(
-                width=s(page, 520),
+                width=pt_scale(page, 520),
                 content=ft.Column(
                     [
                         page._lx_test,
@@ -984,7 +984,7 @@ def get_labs_view(page: ft.Page):
                 ft.Divider(),
                 reports_container,
 
-                ft.Divider(height=s(page, 24)),
+                ft.Divider(height=pt_scale(page, 24)),
                 ft.Row([ft.Text("Lab Results", size=20, weight="bold")]),
                 selected_report_text,
                 ft.Row([results_search_field, results_search_btn, results_clear_btn], wrap=True),
@@ -995,6 +995,6 @@ def get_labs_view(page: ft.Page):
             expand=True,
             scroll=True,
         ),
-        padding=s(page, 16),
+        padding=pt_scale(page, 16),
         radius=10,
     )

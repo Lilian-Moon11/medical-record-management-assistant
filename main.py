@@ -35,7 +35,7 @@
 
 import flet as ft
 
-from utils.ui_helpers import s, show_snack
+from utils.ui_helpers import pt_scale, show_snack
 
 from core import app_state
 from ui import routing, navigation, dialogs, login
@@ -64,7 +64,7 @@ def main(page: ft.Page):
     get_view_for_index = routing.make_get_view_for_index(page, apply_settings_callback=apply_settings_callback)
 
     # --- dialogs (register once; safe to call multiple times) ---
-    dialogs.ensure_dialogs_registered(page, s=s, show_snack=show_snack)
+    dialogs.ensure_dialogs_registered(page, s=pt_scale, show_snack=show_snack)
 
     # --- logout (returns to login view) ---
     def logout():
@@ -86,10 +86,10 @@ def main(page: ft.Page):
         navigation.show_main_dashboard(page, get_view_for_index=get_view_for_index)
 
     def on_show_recovery(recovery_key: str):
-        dialogs.show_recovery_ceremony(page, recovery_key, s=s, show_snack=show_snack)
+        dialogs.show_recovery_ceremony(page, recovery_key, s=pt_scale, show_snack=show_snack)
 
     def on_open_forgot_password():
-        dialogs.open_forgot_password(page, s=s, show_snack=show_snack)
+        dialogs.open_forgot_password(page, s=pt_scale, show_snack=show_snack)
 
     # --- login view ---
     login_view = login.build_login_view(

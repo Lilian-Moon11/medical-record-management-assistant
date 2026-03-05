@@ -18,6 +18,8 @@
 # DESIGN NOTES:
 # - Uses page.overlay for confirmation dialogs to ensure reliable rendering
 #   when the app is mounted under a custom page.root container
+# - The delete confirmation dialog is created once and reused (kept mounted
+#   in page.overlay) to avoid intermittent action-button click issues
 # - Delete confirmations close the UI immediately, then perform filesystem
 #   and database operations asynchronously to avoid blocking the UI thread
 # - Dialogs are non-modal to allow click-outside dismissal where supported
@@ -26,14 +28,11 @@
 # - Document IDs are treated as opaque identifiers; user-facing ordering
 #   is handled via sort/filter logic rather than relying on database IDs
 # -----------------------------------------------------------------------------
-
 import flet as ft
 import os
 import asyncio
 import tempfile
-
 from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes, decrypt_bytes
-
 from datetime import datetime
 
 from database import (
@@ -42,7 +41,7 @@ from database import (
     delete_document,
     get_document_path,
 )
-from utils.ui_helpers import s, show_snack
+from utils.ui_helpers import pt_scale, show_snack
 
 
 def get_documents_view(page: ft.Page):
@@ -76,10 +75,22 @@ def get_documents_view(page: ft.Page):
         page._delete_dialog_open = False
         page.update()
 
-    async def do_delete_async(doc_id: int):
+    def confirm_delete(_=None):
+        pending = page._pending_delete
+        if not pending:
+            close_delete_dlg()
+            return
+        doc_id, _name = pending
+        close_delete_dlg()  # close dialog immediately for UX
+
+        # Perform delete synchronously so the table refreshes right away
         try:
-            file_path = get_document_path(page.db_connection, doc_id)
-            delete_document(page.db_connection, doc_id)
+            file_path = get_document_path(page.db_connection, int(doc_id))
+
+            if isinstance(file_path, (tuple, list)):
+                file_path = file_path[0] if file_path else None
+
+            delete_document(page.db_connection, int(doc_id))
 
             if file_path and os.path.exists(file_path):
                 try:
@@ -94,23 +105,12 @@ def get_documents_view(page: ft.Page):
             print("DELETE ERROR:", ex)
             show_snack(page, f"Delete failed: {ex}", "red")
 
-    def confirm_delete(_=None):
-        pending = page._pending_delete
-        if not pending:
-            # Should never happen, but don't crash if state is weird
-            close_delete_dlg()
-            return
-        doc_id, _name = pending
-        close_delete_dlg()  # close immediately for UX
-        asyncio.create_task(do_delete_async(int(doc_id)))
-
     if not hasattr(page, "_delete_dlg") or page._delete_dlg is None:
         page._delete_dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Confirm Delete"),
             content=ft.Text(""),
             actions=[
-                # I know ElevatedButton was depricated, but I don't get there error here and it's the only way I have found to make this section work. 
                 ft.ElevatedButton("Cancel", on_click=close_delete_dlg),
                 ft.ElevatedButton("Delete", icon=ft.Icons.DELETE, on_click=confirm_delete),
             ],
@@ -150,7 +150,7 @@ def get_documents_view(page: ft.Page):
         return (root + ext).lower()
 
     # 3. HELPER FUNCTIONS
-    async def open_doc_async(path: str | None, display_name: str = "record.pdf"):
+    async def open_doc_async(path: str | None, human_name: str = "record.pdf"):
         if not path or not os.path.exists(path):
             show_snack(page, "File not found.", "red")
             return
@@ -158,13 +158,12 @@ def get_documents_view(page: ft.Page):
         try:
             # Decrypt to a temp PDF for viewing
             fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
-
             with open(path, "rb") as f:
                 ciphertext = f.read()
             plaintext = decrypt_bytes(fmk, ciphertext)
 
             # Write temp PDF
-            safe_name = display_name if display_name.lower().endswith(".pdf") else f"{display_name}.pdf"
+            safe_name = human_name if human_name.lower().endswith(".pdf") else f"{human_name}.pdf"
             tmp_dir = tempfile.gettempdir()
             tmp_path = os.path.join(tmp_dir, f"lpa_decrypted_{patient_id}_{int(datetime.now().timestamp())}.pdf")
             with open(tmp_path, "wb") as f:
@@ -179,8 +178,8 @@ def get_documents_view(page: ft.Page):
             show_snack(page, f"Open failed: {ex}", "red")
 
     def open_doc_click(e: ft.ControlEvent):
-        enc_path, display_name = e.control.data
-        asyncio.create_task(open_doc_async(enc_path, display_name))
+        enc_path, human_name = e.control.data
+        asyncio.create_task(open_doc_async(enc_path, human_name))
 
     def delete_handler(e: ft.ControlEvent):
         data = getattr(e.control, "data", None)
@@ -254,8 +253,12 @@ def get_documents_view(page: ft.Page):
             )
 
         data_table.rows = rows
-        if update_ui and data_table.page:
-            data_table.update()
+        
+        if update_ui:
+            try:
+                data_table.update()
+            except Exception:
+                pass
 
     def on_search_change(e: ft.ControlEvent):
         refresh_table(e.control.value, update_ui=True)
@@ -307,7 +310,6 @@ def get_documents_view(page: ft.Page):
                 plaintext = f.read()
 
             fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
-
             ciphertext = encrypt_bytes(fmk, plaintext)
 
             with open(enc_path, "wb") as f:
@@ -316,7 +318,7 @@ def get_documents_view(page: ft.Page):
             add_document(
                 page.db_connection,
                 patient_id,
-                file_name,     
+                file_name,     # human label
                 enc_path,      # encrypted disk path
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
             )
@@ -332,13 +334,13 @@ def get_documents_view(page: ft.Page):
     refresh_table(update_ui=False)
 
     return ft.Container(
-        padding=s(page, 20),
+        padding=pt_scale(page, 20),
         expand=True,
         content=ft.Column(
             [
                 ft.Row(
                     [
-                        ft.Text("Medical Records", size=s(page, 24), weight="bold"),
+                        ft.Text("Medical Records", size=pt_scale(page, 24), weight="bold"),
                         ft.Container(expand=True),
                         ft.Button(
                             "Upload Document",

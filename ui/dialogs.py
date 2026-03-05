@@ -14,15 +14,15 @@
 # `page.overlay` exactly once) to keep handlers stable across rerenders and
 # navigation. It exposes safe entry points (methods attached to `page`) for:
 # - Sensitive Details dialog: masked-by-default DOB/SSN display with explicit
-#   “Reveal” gating before edits, and SSN persistence to patient_field_values.
+#   Reveal gating before edits, and SSN persistence to patient_field_values.
 # - Patient Info management dialogs:
 #   - Delete field definition (with guardrails preventing deletion of core/system keys)
 #   - Add custom field (unique field_key generation + basic data-type detection)
-#   - Bulk “Edit Sensitivity” switches that toggle section/list sensitivity flags
+#   - Bulk Edit Sensitivity switches that toggle section/list sensitivity flags
 #     in field_definitions (e.g., section.demographics / section.other).
 # - Account recovery dialogs:
 #   - Forgot-password flow (unlock via recovery key, set new password)
-#   - Recovery-key ceremony (copy/display key + require “I saved it”)
+#   - Recovery-key ceremony (copy/display key + require I saved it)
 #   - Staged recovery-key rotation committed only after confirmation
 #
 # Intersections:
@@ -48,7 +48,7 @@ from database import (
 )
 from crypto.keybag import set_new_password, generate_recovery_key_b64, rotate_recovery_key
 from core.startup import run_self_test
-from utils.ui_helpers import run_async, copy_with_snack, is_sensitive_flag, detect_data_type_from_label, slugify_label, clean_lbl, s, show_snack
+from utils.ui_helpers import run_async, copy_with_snack, is_sensitive_flag, detect_data_type_from_label, slugify_label, clean_lbl, pt_scale, show_snack
 
 def ensure_sensitive_dialogs_registered(page: ft.Page, *, s, show_snack):
     if getattr(page, "_sensitive_dlg", None) is not None:
@@ -56,8 +56,8 @@ def ensure_sensitive_dialogs_registered(page: ft.Page, *, s, show_snack):
 
     page._sensitive_revealed = False
 
-    title = ft.Text("Sensitive Details", size=s(page, 18), weight="bold")
-    hint = ft.Text("Click Reveal to show DOB and SSN.", size=s(page, 12))
+    title = ft.Text("Sensitive Details", size=pt_scale(page, 18), weight="bold")
+    hint = ft.Text("Click Reveal to show DOB and SSN.", size=pt_scale(page, 12))
 
     dob_text = ft.Text("DOB: ****-**-**", selectable=True)
     ssn_text = ft.Text("SSN: ***-**-****", selectable=True)
@@ -71,7 +71,7 @@ def ensure_sensitive_dialogs_registered(page: ft.Page, *, s, show_snack):
         disabled=True,  # enabled only after Reveal
     )
 
-    status = ft.Text("", size=s(page, 12), color="red")
+    status = ft.Text("", size=pt_scale(page, 12), color="red")
 
     def _load_masked():
         page._sensitive_revealed = False
@@ -192,8 +192,8 @@ def ensure_sensitive_dialogs_registered(page: ft.Page, *, s, show_snack):
 
 def open_sensitive_details(page: ft.Page):
     # You already pass s/show_snack around; if not, import from utils.
-    from utils import s, show_snack
-    ensure_sensitive_dialogs_registered(page, s=s, show_snack=show_snack)
+    from utils.ui_helpers import pt_scale, show_snack
+    ensure_sensitive_dialogs_registered(page, s=pt_scale, show_snack=show_snack)
     page._sensitive_dlg.open = True
     try:
         page._sensitive_dlg.update()
@@ -217,15 +217,15 @@ def ensure_dialogs_registered(page: ft.Page, *, s, show_snack):
     # ---------------------------
     page._current_recovery_key = ""  # transient; read by event handler (no closure capture)
 
-    page._recovery_key_text = ft.Text("", selectable=True, font_family="Consolas", size=s(page, 14))
+    page._recovery_key_text = ft.Text("", selectable=True, font_family="Consolas", size=pt_scale(page, 14))
     page._recovery_saved_check = ft.Checkbox(
         label="I saved this recovery key somewhere safe.",
         value=False,
     )
-    page._recovery_status = ft.Text("", color="red", size=s(page, 12))
+    page._recovery_status = ft.Text("", color="red", size=pt_scale(page, 12))
 
     page._recovery_pending_note = ft.Container(
-        padding=s(page, 10),
+        padding=pt_scale(page, 10),
         border=ft.Border.all(1, ft.Colors.ORANGE),
         border_radius=6,
         visible=False,
@@ -233,7 +233,7 @@ def ensure_dialogs_registered(page: ft.Page, *, s, show_snack):
             "Rotation is NOT final until you click 'I saved it.'\n"
             "If you close this dialog before confirming, the old recovery key remains valid.",
             color=ft.Colors.ORANGE,
-            size=s(page, 12),
+            size=pt_scale(page, 12),
             ),
         )
 
@@ -323,19 +323,19 @@ def ensure_dialogs_registered(page: ft.Page, *, s, show_snack):
 
     page._recovery_dlg = ft.AlertDialog(
         modal=False,
-        title=ft.Text("Save your recovery key", size=s(page, 18), weight="bold"),
+        title=ft.Text("Save your recovery key", size=pt_scale(page, 18), weight="bold"),
         content=ft.Column(
             [
                 ft.Text(
                     "This key lets you recover the vault if you forget your password.\n"
                     "If you lose BOTH your password and this key, the vault cannot be recovered.",
-                    size=s(page, 14),
+                    size=pt_scale(page, 14),
                 ),
 
                 page._recovery_pending_note,  
 
                 ft.Container(
-                    padding=s(page, 10),
+                    padding=pt_scale(page, 10),
                     border=ft.Border.all(2, ft.Colors.GREY),
                     border_radius=8,
                     content=page._recovery_key_text,
@@ -345,7 +345,7 @@ def ensure_dialogs_registered(page: ft.Page, *, s, show_snack):
                 page._recovery_status,
             ],
             tight=True,
-            spacing=s(page, 10),
+            spacing=pt_scale(page, 10),
         ),
         actions=[page._recovery_done_btn],
         on_dismiss=recovery_close,
