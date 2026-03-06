@@ -23,9 +23,11 @@
 # explicit checks and user messaging.
 # -----------------------------------------------------------------------------
 
+import os
 import flet as ft
-from database import get_setting, set_setting
+from database import get_setting, set_setting, resource_path
 from utils.ui_helpers import pt_scale, show_snack, run_async, copy_with_snack
+from utils.airlock import export_profile
 from crypto.keybag import verify_password, rotate_recovery_key, generate_recovery_key_b64
 
 
@@ -41,6 +43,48 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
     current_theme = get_setting(page.db_connection, "ui.theme", "system")
     is_high_contrast = get_setting(page.db_connection, "ui.high_contrast", "0") == "1"
     is_large_text = get_setting(page.db_connection, "ui.large_text", "0") == "1"
+
+    # ── Export My Data ─────────────────────────────────────────────────────
+    export_status = ft.Text("", size=pt_scale(page, 14))
+    export_progress = ft.ProgressRing(visible=False, width=20, height=20)
+
+    async def export_click(e):
+        result = await ft.FilePicker().save_file(
+            dialog_title="Save profile backup",
+            file_name="my_medical_profile.zip",
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["zip"],
+        )
+        if not result:
+            return
+        dest = result if isinstance(result, str) else getattr(result, 'path', str(result))
+        if not dest:
+            return
+        if not dest.lower().endswith(".zip"):
+            dest += ".zip"
+        export_status.value = "Exporting\u2026"
+        export_status.color = ft.Colors.GREY
+        export_progress.visible = True
+        page.update()
+        try:
+            data_dir = os.path.join(os.path.dirname(page.db_path), "data")
+            export_profile(
+                conn=page.db_connection,
+                dmk_raw=page.db_key_raw,
+                data_dir=data_dir,
+                dest_path=dest,
+                zip_password=page.db_password,
+            )
+            export_status.value = f"Exported to {os.path.basename(dest)}"
+            export_status.color = ft.Colors.GREEN
+            show_snack(page, "Profile exported successfully.", ft.Colors.GREEN)
+        except Exception as ex:
+            export_status.value = f"Export failed: {ex}"
+            export_status.color = ft.Colors.RED
+            show_snack(page, f"Export failed: {ex}", ft.Colors.RED)
+        finally:
+            export_progress.visible = False
+            page.update()
 
     # 2. Define Controls
     theme_dd = ft.Dropdown(
@@ -400,7 +444,25 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                             on_click=rotate_recovery_click,
                         ),
                     ]
-                )
+                ),
+                ft.Divider(),
+                ft.Text("Export My Data", size=pt_scale(page, 18), weight="bold"),
+                ft.Text(
+                    "Save all your medical records to a portable file you can "
+                    "move to another computer.  The file is encrypted with your "
+                    "database password.",
+                    size=pt_scale(page, 14),
+                    color=ft.Colors.GREY,
+                ),
+                ft.Row([
+                    ft.Button(
+                        "Export My Data",
+                        icon=ft.Icons.DOWNLOAD,
+                        on_click=export_click,
+                    ),
+                    export_progress,
+                ]),
+                export_status,
             ]
         )
     )

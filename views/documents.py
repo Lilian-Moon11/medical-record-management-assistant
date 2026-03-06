@@ -88,7 +88,7 @@ def get_documents_view(page: ft.Page):
             file_path = get_document_path(page.db_connection, int(doc_id))
 
             if isinstance(file_path, (tuple, list)):
-                file_path = file_path[0] if file_path else None
+                file_path = file_path[1] if file_path else None
 
             delete_document(page.db_connection, int(doc_id))
 
