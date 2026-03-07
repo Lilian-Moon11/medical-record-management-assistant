@@ -7,21 +7,25 @@
 
 # -----------------------------------------------------------------------------
 # PURPOSE:
-# Labs (Reports + Results)
+# Labs — Test-Centric View with Trend Charts
 #
-# Local CRUD UI for lab reports and their lab results scoped to patient_id.
-# - Reports: Search (LIKE), Add/Edit via stable overlay dialog, Delete w/ confirm + snack
-# - Results: View results for a selected report, optional test-name search,
-#            Add/Edit via stable overlay dialog, Delete w/ confirm + snack
+# Redesigned lab viewer organized by test name (e.g. "Glucose", "A1c").
+# Layout:
+#   Left sidebar: searchable list of distinct test names
+#   Right panel:  trend line chart + historical results DataTable
+#
+# The underlying data model is unchanged (lab_reports → lab_results).
+# Reports remain for grouping and document linking; the UI surfaces the
+# test-level view for easier trend tracking.
 #
 # Design notes (Flet mounting safety):
-# - Do NOT call control.update() during initial view construction (before mount).
-# - Build initial DataTable rows "quietly" and rely on page re-render.
-# - Dialogs are created once and appended to page.overlay once.
+# - Do NOT call control.update() during initial view construction.
+# - Dialogs created once, appended to page.overlay once.
 # -----------------------------------------------------------------------------
 
 from __future__ import annotations
 import flet as ft
+import flet.canvas as cv
 import re
 from datetime import date
 from utils.ui_helpers import show_snack, themed_panel, pt_scale
@@ -36,6 +40,11 @@ from database import (
     add_lab_result,
     update_lab_result,
     delete_lab_result,
+    # Test-centric
+    list_distinct_test_names,
+    list_all_results_for_test,
+    # Documents
+    get_document_metadata,
 )
 
 
@@ -48,127 +57,40 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     # Stable state holders
     # ----------------------------
-    if not hasattr(page, "_labs_selected_report_id"):
-        page._labs_selected_report_id = None  # int | None
-
-    if not hasattr(page, "_editing_lab_report_id"):
-        page._editing_lab_report_id = None  # None=new, int=edit
-
+    if not hasattr(page, "_labs_selected_test_name"):
+        page._labs_selected_test_name = None  # str | None
     if not hasattr(page, "_editing_lab_result_id"):
-        page._editing_lab_result_id = None  # None=new, int=edit
+        page._editing_lab_result_id = None
     if not hasattr(page, "_editing_lab_result_report_id"):
-        page._editing_lab_result_report_id = None  # report_id for result add/edit
-
-    if not hasattr(page, "_pending_lab_report_delete"):
-        page._pending_lab_report_delete = None  # (report_id, label)
+        page._editing_lab_result_report_id = None
     if not hasattr(page, "_pending_lab_result_delete"):
-        page._pending_lab_result_delete = None  # (result_id, label)
+        page._pending_lab_result_delete = None
     if not hasattr(page, "_labs_report_cache"):
-        page._labs_report_cache = {}  # report_id -> report_row
+        page._labs_report_cache = {}
 
     # ----------------------------
-    # Reports table (created early)
+    # Helpers
     # ----------------------------
-    reports_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("Collected")),
-            ft.DataColumn(ft.Text("Facility")),
-            ft.DataColumn(ft.Text("Ordering Provider")),
-            ft.DataColumn(ft.Text("Notes")),
-            ft.DataColumn(ft.Text("Edit")),
-            ft.DataColumn(ft.Text("Results")),
-            ft.DataColumn(ft.Text("Delete")),
-        ],
-        rows=[],
-        column_spacing=pt_scale(page, 14),
-        heading_row_height=pt_scale(page, 40),
-        data_row_min_height=pt_scale(page, 40),
-        data_row_max_height=pt_scale(page, 56),
-        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
-        if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
-        border_radius=8,
-    )
-
-    reports_container = ft.Container(content=reports_table, expand=True)
-
-    # ----------------------------
-    # Results table (created early)
-    # ----------------------------
-    results_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("Test")),
-            ft.DataColumn(ft.Text("Value")),
-            ft.DataColumn(ft.Text("Unit")),
-            ft.DataColumn(ft.Text("")),      
-            ft.DataColumn(ft.Text("Date")),
-            ft.DataColumn(ft.Text("Info")),   
-            ft.DataColumn(ft.Text("Edit")),
-            ft.DataColumn(ft.Text("Delete")),
-        ],
-        rows=[],
-        column_spacing=pt_scale(page, 14),
-        heading_row_height=pt_scale(page, 40),
-        data_row_min_height=pt_scale(page, 40),
-        data_row_max_height=pt_scale(page, 56),
-        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
-        if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
-        border_radius=8,
-    )
-
-    results_container = ft.Container(content=results_table, expand=True)
-
-    # ----------------------------
-    # Helpers: report/result labels
-    # ----------------------------
-    def _report_label(r):
-        # r: (id, source_document_id, collected_date, reported_date, ordering_provider, facility, notes, created_at, updated_at)
-        _id, _doc, collected, reported, provider, facility, notes, _c, _u = r
-        parts = []
-        if collected:
-            parts.append(collected)
-        if facility:
-            parts.append(facility)
-        if provider:
-            parts.append(provider)
-        if not parts and reported:
-            parts.append(reported)
-        if not parts and notes:
-            parts.append((notes or "")[:30])
-        return " - ".join(parts) if parts else f"Report #{_id}"
-
-    def _result_label(x):
-        # x: (id, test_name, value_text, value_num, unit, ref_range_text, ref_low, ref_high, ref_unit, abnormal_flag, result_date, notes, created_at, updated_at)
-        rid, test_name, value_text, _vn, unit, *_rest = x
-        name = test_name or f"Result #{rid}"
-        val = value_text or ""
-        u = unit or ""
-        return f"{name}: {val} {u}".strip()
-
     def _parse_value_num(value_text: str | None) -> float | None:
         """
         Extract a numeric value from user-entered lab text when it's clearly numeric.
-        Keeps things like '<5', '>200', 'NEG', 'trace' as non-numeric (None) for now.
+        Keeps things like '<5', '>200', 'NEG', 'trace' as non-numeric (None).
         """
         if not value_text:
             return None
-
         t = value_text.strip()
         if not t:
             return None
-
-        # Comparators / qualitative values -> leave as text-only for now
         if any(sym in t for sym in ("<", ">", "<=", ">=")):
             return None
-
         m = re.search(r"[-+]?\d[\d,]*\.?\d*", t)
         if not m:
             return None
-
         try:
             return float(m.group(0).replace(",", ""))
         except Exception:
             return None
-    
+
     def _flag_result(flag: str | None) -> str:
         if not flag:
             return "Normal / not flagged"
@@ -180,6 +102,215 @@ def get_labs_view(page: ft.Page):
             "N": "Normal",
         }.get(f, flag)
 
+    def _flag_chip(flag: str | None) -> ft.Control:
+        """Return a colored chip for the flag column."""
+        if not flag:
+            f_upper = "N"
+        else:
+            f_upper = flag.strip().upper()
+
+        label_map = {"H": "High", "L": "Low", "A": "Abnormal", "N": "Normal"}
+        color_map = {"H": "red", "L": "blue", "A": "orange", "N": "green"}
+
+        label = label_map.get(f_upper, flag or "Normal")
+        bg = color_map.get(f_upper, "green")
+
+        return ft.Container(
+            content=ft.Text(label, size=11, color="white", weight="bold"),
+            bgcolor=bg,
+            border_radius=10,
+            padding=ft.Padding(left=8, right=8, top=3, bottom=3),
+        )
+
+    def _compute_trend(results_rows) -> str:
+        """Compute trend from last 3+ numeric data points."""
+        nums = []
+        for row in results_rows:
+            vn = row[3]  # value_num
+            if vn is not None:
+                nums.append(vn)
+        if len(nums) < 2:
+            return "Insufficient Data"
+        recent = nums[-3:] if len(nums) >= 3 else nums[-2:]
+        diffs = [recent[i+1] - recent[i] for i in range(len(recent)-1)]
+        avg_diff = sum(diffs) / len(diffs)
+        if avg_diff > 0.5:
+            return "Rising"
+        elif avg_diff < -0.5:
+            return "Falling"
+        return "Stable"
+
+    def _compute_range(results_rows) -> str:
+        """Compute Normal/High/Low from the latest value vs reference range."""
+        if not results_rows:
+            return "No Data"
+        latest = results_rows[-1]
+        vn = latest[3]    # value_num
+        flag = latest[9]  # abnormal_flag
+        if flag:
+            f = flag.strip().upper()
+            if f == "H": return "High"
+            if f == "L": return "Low"
+            if f == "A": return "Abnormal"
+            if f == "N": return "Normal"
+        ref_low = latest[6]   # ref_low
+        ref_high = latest[7]  # ref_high
+        if vn is not None and ref_low is not None and vn < ref_low:
+            return "Low"
+        if vn is not None and ref_high is not None and vn > ref_high:
+            return "High"
+        if vn is not None:
+            return "Normal"
+        return "N/A"
+
+    # ----------------------------
+    # Chart builder (canvas-based)
+    # ----------------------------
+    CHART_H = pt_scale(page, 200)
+    CHART_PAD_L = pt_scale(page, 55)   # left padding for y-axis labels
+    CHART_PAD_R = pt_scale(page, 20)
+    CHART_PAD_T = pt_scale(page, 15)
+    CHART_PAD_B = pt_scale(page, 30)   # bottom padding for x-axis labels
+
+    chart_container = ft.Container(expand=True, height=CHART_H)
+
+    def _build_chart(results_rows):
+        """Build a canvas-based line chart from the results rows."""
+        numeric_pts = []  # list of (index, value_num, date_label, tooltip_text)
+        ref_low_val = None
+        ref_high_val = None
+
+        for row in results_rows:
+            vn = row[3]  # value_num
+            if vn is None:
+                continue
+            d = row[10] or row[14] or ""  # result_date or collected_date
+            tip = f"{d}\n{row[2] or ''} {row[4] or ''}"
+            numeric_pts.append((len(numeric_pts), vn, d, tip))
+            if row[6] is not None:
+                ref_low_val = row[6]
+            if row[7] is not None:
+                ref_high_val = row[7]
+
+        if not numeric_pts:
+            chart_container.content = ft.Text(
+                "No numeric data to chart.",
+                italic=True,
+                color=ft.Colors.ON_SURFACE_VARIANT
+                if hasattr(ft.Colors, "ON_SURFACE_VARIANT")
+                else None,
+            )
+            return
+
+        values = [p[1] for p in numeric_pts]
+        min_y = min(values)
+        max_y = max(values)
+        y_range = max_y - min_y if max_y > min_y else 10
+        chart_min_y = min_y - y_range * 0.2
+        chart_max_y = max_y + y_range * 0.2
+        if ref_low_val is not None:
+            chart_min_y = min(chart_min_y, ref_low_val - y_range * 0.1)
+        if ref_high_val is not None:
+            chart_max_y = max(chart_max_y, ref_high_val + y_range * 0.1)
+
+        n = len(numeric_pts)
+        draw_w = 600 - CHART_PAD_L - CHART_PAD_R  # default canvas width
+        draw_h = CHART_H - CHART_PAD_T - CHART_PAD_B
+        y_span = chart_max_y - chart_min_y if chart_max_y > chart_min_y else 1
+
+        def _x(idx):
+            if n <= 1:
+                return CHART_PAD_L + draw_w / 2
+            return CHART_PAD_L + (idx / (n - 1)) * draw_w
+
+        def _y(val):
+            return CHART_PAD_T + draw_h - ((val - chart_min_y) / y_span) * draw_h
+
+        shapes = []
+        line_paint = ft.Paint(color=ft.Colors.LIGHT_BLUE_400, stroke_width=2, style=ft.PaintingStyle.STROKE)
+        dot_paint = ft.Paint(color=ft.Colors.LIGHT_BLUE_400, style=ft.PaintingStyle.FILL)
+        grid_paint = ft.Paint(color=ft.Colors.with_opacity(0.15, ft.Colors.ON_SURFACE), stroke_width=1, style=ft.PaintingStyle.STROKE)
+        ref_paint = ft.Paint(color=ft.Colors.with_opacity(0.5, ft.Colors.GREEN), stroke_width=1, style=ft.PaintingStyle.STROKE)
+        text_paint = ft.Paint(color=ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY)
+
+        # Grid lines (4 horizontal)
+        for i in range(5):
+            gy = CHART_PAD_T + (i / 4) * draw_h
+            shapes.append(cv.Line(CHART_PAD_L, gy, CHART_PAD_L + draw_w, gy, paint=grid_paint))
+            # Y-axis label
+            val_label = chart_max_y - (i / 4) * y_span
+            shapes.append(cv.Text(CHART_PAD_L - pt_scale(page, 50), gy - 5, f"{val_label:.0f}", style=ft.TextStyle(size=9, color=ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY)))
+
+        # Reference range dashed lines
+        if ref_high_val is not None:
+            ry = _y(ref_high_val)
+            # Draw dashed line as short segments
+            x_pos = CHART_PAD_L
+            while x_pos < CHART_PAD_L + draw_w:
+                x_end = min(x_pos + 6, CHART_PAD_L + draw_w)
+                shapes.append(cv.Line(x_pos, ry, x_end, ry, paint=ref_paint))
+                x_pos += 12
+        if ref_low_val is not None:
+            ry = _y(ref_low_val)
+            x_pos = CHART_PAD_L
+            while x_pos < CHART_PAD_L + draw_w:
+                x_end = min(x_pos + 6, CHART_PAD_L + draw_w)
+                shapes.append(cv.Line(x_pos, ry, x_end, ry, paint=ref_paint))
+                x_pos += 12
+
+        # Data lines connecting points
+        for i in range(1, n):
+            x1, y1 = _x(i - 1), _y(numeric_pts[i - 1][1])
+            x2, y2 = _x(i), _y(numeric_pts[i][1])
+            shapes.append(cv.Line(x1, y1, x2, y2, paint=line_paint))
+
+        # Data point dots
+        for i, (idx, val, d, tip) in enumerate(numeric_pts):
+            px, py = _x(i), _y(val)
+            shapes.append(cv.Circle(px, py, 4, paint=dot_paint))
+
+        # X-axis date labels (show ~6 max)
+        label_step = max(1, n // 6)
+        for i, (idx, val, d, tip) in enumerate(numeric_pts):
+            if i % label_step == 0 or i == n - 1:
+                short = d[5:] if len(d) >= 7 else d
+                shapes.append(cv.Text(_x(i) - 15, CHART_H - CHART_PAD_B + 5, short, style=ft.TextStyle(size=9, color=ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY)))
+
+        chart_canvas = cv.Canvas(
+            shapes=shapes,
+            width=600,
+            height=CHART_H,
+        )
+        chart_container.content = chart_canvas
+
+    # ----------------------------
+    # Historical results table
+    # ----------------------------
+    results_table = ft.DataTable(
+        columns=[
+            ft.DataColumn(ft.Text("Date")),
+            ft.DataColumn(ft.Text("Value")),
+            ft.DataColumn(ft.Text("Unit")),
+            ft.DataColumn(ft.Text("Flag")),
+            ft.DataColumn(ft.Text("Info")),
+            ft.DataColumn(ft.Text("Edit/Delete")),
+        ],
+        rows=[],
+        column_spacing=pt_scale(page, 14),
+        heading_row_height=pt_scale(page, 40),
+        data_row_min_height=pt_scale(page, 40),
+        data_row_max_height=pt_scale(page, 56),
+        heading_row_color=ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
+        if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+        border_radius=8,
+    )
+
+    results_container = ft.Container(content=results_table, expand=True)
+
+    # ----------------------------
+    # Info dialog (coding/details with source doc)
+    # ----------------------------
     def _ensure_result_info_dialog():
         if getattr(page, "_lab_result_info_dlg", None) is not None:
             return page._lab_result_info_dlg
@@ -207,33 +338,24 @@ def get_labs_view(page: ft.Page):
         page.update()
         return page._lab_result_info_dlg
 
-
     def open_result_info(result_row):
         """
-        result_row shape:
-        (id, test_name, value_text, value_num, unit, ref_range_text, ref_low, ref_high,
-         ref_unit, abnormal_flag, result_date, notes, created_at, updated_at)
+        result_row shape (from list_all_results_for_test):
+        (result_id, test_name, value_text, value_num, unit, ref_range_text,
+         ref_low, ref_high, ref_unit, abnormal_flag, result_date, notes,
+         report_id, source_document_id, collected_date, created_at, updated_at)
         """
         (
-            result_id,
-            test_name,
-            value_text,
-            value_num,
-            unit,
-            ref_range_text,
-            ref_low,
-            ref_high,
-            ref_unit,
-            flag,
-            result_date,
-            notes,
-            _c,
-            _u,
+            result_id, test_name, value_text, value_num, unit,
+            ref_range_text, ref_low, ref_high, ref_unit,
+            flag, result_date, notes,
+            report_id, source_document_id, collected_date,
+            _c, _u,
         ) = result_row
 
         dlg = _ensure_result_info_dialog()
 
-        # Build a clean reference range string
+        # Build reference range string
         rr = ""
         if ref_range_text:
             rr = ref_range_text
@@ -243,13 +365,24 @@ def get_labs_view(page: ft.Page):
             ru = ref_unit or unit or ""
             rr = f"{lo} - {hi} {ru}".strip()
 
-        # Prefer value_text, but show numeric too if present
         v_parts = []
         if value_text:
             v_parts.append(value_text)
         if value_num is not None:
             v_parts.append(str(value_num))
         value_display = " / ".join(v_parts) if v_parts else ""
+
+        # Source document info
+        source_text = "Source: Manual entry"
+        if source_document_id:
+            try:
+                doc_meta = get_document_metadata(page.db_connection, int(source_document_id))
+                if doc_meta:
+                    source_text = f"Source: {doc_meta[0]}"  # file_name
+                else:
+                    source_text = f"Source: Document #{source_document_id}"
+            except Exception:
+                source_text = f"Source: Document #{source_document_id}"
 
         page._lab_result_info_title.value = test_name or f"Result #{result_id}"
         page._lab_result_info_body.controls = [
@@ -259,95 +392,54 @@ def get_labs_view(page: ft.Page):
             ft.Divider(),
             ft.Text(f"Reference range: {rr or '(not provided)'}"),
             ft.Text(f"Notes: {notes or ''}".strip()),
+            ft.Divider(),
+            ft.Text(source_text, italic=True),
+            ft.Text(f"Report ID: {report_id}", size=11,
+                     color=ft.Colors.ON_SURFACE_VARIANT
+                     if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else None),
         ]
 
         dlg.open = True
         page.update()
 
-    def _abnormal_icon(flag: str | None) -> ft.Control:
-        if not flag:
-            return ft.Container(width=pt_scale(page, 24))
-
-        f = flag.strip().upper()
-
-        if f == "H":
-            return ft.Icon(ft.Icons.TRENDING_UP, tooltip="High", color="red")
-        if f == "L":
-            return ft.Icon(ft.Icons.TRENDING_DOWN, tooltip="Low", color="red")
-        if f == "A":
-            return ft.Icon(ft.Icons.REPORT_PROBLEM_OUTLINED, tooltip="Abnormal", color="red")
-
-        # N or anything else -> show nothing (keeps alignment)
-        return ft.Container(width=pt_scale(page, 24))
-
     # ----------------------------
-    # Build rows (no update calls)
+    # Build historical table rows
     # ----------------------------
-    def _build_report_rows(rows):
-        reports_table.rows = []
-        for r in rows:
-            # r: (id, source_document_id, collected_date, reported_date, ordering_provider, facility, notes, created_at, updated_at)
-            report_id, _doc_id, collected, _reported, ordering_provider, facility, notes, _c, _u = r
-
-            # Cache the full row so we can look up collected/reported dates later
-            page._labs_report_cache[int(report_id)] = r
-
-            reports_table.rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(collected or "")),
-                        ft.DataCell(ft.Text(facility or "")),
-                        ft.DataCell(ft.Text(ordering_provider or "")),
-                        ft.DataCell(ft.Text((notes or "")[:60])),
-
-                        ft.DataCell(
-                            ft.IconButton(
-                                icon=ft.Icons.EDIT,
-                                tooltip="Edit report",
-                                on_click=lambda e, rr=r: open_edit_report(rr),
-                            )
-                        ),
-
-                        ft.DataCell(
-                            ft.IconButton(
-                                icon=ft.Icons.LIST_ALT,
-                                tooltip="View results",
-                                on_click=lambda e, rid=int(r[0]): select_report(rid),
-                            )
-                        ),
-
-                        ft.DataCell(
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE,
-                                tooltip="Delete report",
-                                on_click=lambda e, rid=int(r[0]), rr=r: open_delete_report(
-                                    rid, _report_label(rr)
-                                ),
-                            )
-                        ),
-                    ]
-                )
-            )
-
     def _build_result_rows(rows):
         results_table.rows = []
         for x in rows:
-            # x: (id, test_name, value_text, value_num, unit, ref_range_text, ref_low, ref_high, ref_unit, abnormal_flag, result_date, notes, created_at, updated_at)
-            result_id, test_name, value_text, _vn, unit, _rrt, _rl, _rh, _ru, flag, result_date, _notes, _c, _u = x
+            # x shape: (result_id, test_name, value_text, value_num, unit,
+            #           ref_range_text, ref_low, ref_high, ref_unit,
+            #           abnormal_flag, result_date, notes,
+            #           report_id, source_document_id, collected_date,
+            #           created_at, updated_at)
+            result_id = x[0]
+            value_text = x[2]
+            unit = x[4]
+            ref_range_text = x[5]
+            ref_low = x[6]
+            ref_high = x[7]
+            ref_unit = x[8]
+            flag = x[9]
+            result_date = x[10] or x[14] or ""
+
+            # Build reference range display
+            rr = ""
+            if ref_range_text:
+                rr = ref_range_text
+            elif ref_low is not None or ref_high is not None:
+                lo = "" if ref_low is None else str(ref_low)
+                hi = "" if ref_high is None else str(ref_high)
+                ru = ref_unit or unit or ""
+                rr = f"{lo}-{hi} {ru}".strip()
 
             results_table.rows.append(
                 ft.DataRow(
                     cells=[
-                        ft.DataCell(ft.Text(test_name or "")),
+                        ft.DataCell(ft.Text(result_date)),
                         ft.DataCell(ft.Text(value_text or "")),
                         ft.DataCell(ft.Text(unit or "")),
-                        ft.DataCell(
-                            ft.Container(
-                                content=_abnormal_icon(flag),
-                                alignment=ft.Alignment(0, 0),
-                            )
-                        ),
-                        ft.DataCell(ft.Text(result_date or "")),
+                        ft.DataCell(_flag_chip(flag)),
                         ft.DataCell(
                             ft.IconButton(
                                 icon=ft.Icons.INFO_OUTLINE,
@@ -356,45 +448,39 @@ def get_labs_view(page: ft.Page):
                             )
                         ),
                         ft.DataCell(
-                            ft.IconButton(
-                                icon=ft.Icons.EDIT,
-                                tooltip="Edit result",
-                                on_click=lambda e, xx=x: open_edit_result(xx),
-                            )
-                        ),
-                        ft.DataCell(
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE,
-                                tooltip="Delete result",
-                                on_click=lambda e, xid=int(result_id), xx=x: open_delete_result(xid, _result_label(xx)),
-                            )
+                            ft.Row([
+                                ft.IconButton(
+                                    icon=ft.Icons.EDIT,
+                                    tooltip="Edit result",
+                                    on_click=lambda e, xx=x: open_edit_result(xx),
+                                ),
+                                ft.IconButton(
+                                    icon=ft.Icons.DELETE,
+                                    tooltip="Delete result",
+                                    on_click=lambda e, xid=int(result_id), xx=x: open_delete_result(
+                                        xid, f"{x[1] or ''}: {x[2] or ''}"
+                                    ),
+                                ),
+                            ], tight=True, spacing=0)
                         ),
                     ]
                 )
             )
 
     # ----------------------------
-    # Refresh functions (safe updates)
+    # Refresh / Select test
     # ----------------------------
-    def refresh_reports(search_text: str | None = None):
-        try:
-            rows = list_lab_reports(page.db_connection, patient_id, search=search_text, limit=500)
-        except Exception as ex:
-            show_snack(page, f"Load reports failed: {ex}", "red")
-            rows = []
-
-        _build_report_rows(rows)
-
-        try:
-            reports_table.update()
-            page.update()
-        except Exception:
-            pass
-
-    def refresh_results(report_id: int, search_test: str | None = None):
-        if not report_id:
+    def refresh_for_test(test_name: str | None = None):
+        """Load all results for the selected test, update chart + table."""
+        tn = test_name or page._labs_selected_test_name
+        if not tn:
+            chart_container.content = ft.Text(
+                "Select a test from the menu.",
+                italic=True,
+            )
             results_table.rows = []
             try:
+                chart_container.update()
                 results_table.update()
                 page.update()
             except Exception:
@@ -402,350 +488,156 @@ def get_labs_view(page: ft.Page):
             return
 
         try:
-            rows = list_lab_results_for_report(
-                page.db_connection,
-                patient_id,
-                int(report_id),
-                search_test=search_test,
-                limit=500,
-            )
+            rows = list_all_results_for_test(page.db_connection, patient_id, tn)
         except Exception as ex:
             show_snack(page, f"Load results failed: {ex}", "red")
             rows = []
 
+        # Update header
+        test_title.value = tn
+
+        # Build chart
+        _build_chart(rows)
+
+        # Build table
         _build_result_rows(rows)
 
         try:
+            test_title.update()
+            chart_container.update()
             results_table.update()
             page.update()
         except Exception:
             pass
 
     # ----------------------------
-    # Selection + Results header
+    # Test menu sidebar
     # ----------------------------
-    selected_report_text = ft.Text("Select a report to see results.", italic=True)
-    results_header_row = ft.Row(
+    test_list_view = ft.ListView(expand=True, spacing=2, padding=4)
+
+    def _build_test_menu(search: str | None = None):
+        """Populate the test menu sidebar with distinct test names."""
+        try:
+            names = list_distinct_test_names(
+                page.db_connection, patient_id, search=search
+            )
+        except Exception as ex:
+            show_snack(page, f"Load tests failed: {ex}", "red")
+            names = []
+
+        test_list_view.controls = []
+        selected = page._labs_selected_test_name
+
+        for name in names:
+            is_selected = name == selected
+
+            def _on_click(e, n=name):
+                page._labs_selected_test_name = n
+                add_data_btn.disabled = False
+                refresh_for_test(n)
+                _build_test_menu(test_search_field.value or None)
+
+            test_list_view.controls.append(
+                ft.Container(
+                    content=ft.Text(
+                        name,
+                        size=14,
+                        weight="bold" if is_selected else None,
+                        color="white" if is_selected else None,
+                    ),
+                    bgcolor=ft.Colors.PRIMARY if is_selected else ft.Colors.TRANSPARENT,
+                    padding=ft.Padding(left=12, right=12, top=8, bottom=8),
+                    border_radius=6,
+                    on_click=_on_click,
+                    ink=True,
+                )
+            )
+
+        try:
+            test_list_view.update()
+        except Exception:
+            pass
+
+    def _on_test_search(e=None):
+        _build_test_menu(test_search_field.value or None)
+
+    test_search_field = ft.TextField(
+        hint_text="Search tests...",
+        prefix_icon=ft.Icons.SEARCH,
+        dense=True,
+        on_change=_on_test_search,
+        on_submit=_on_test_search,
+        border_radius=8,
+    )
+
+    test_menu_panel = ft.Container(
+        width=pt_scale(page, 230),
+        content=ft.Column(
+            [
+                ft.Text("Test Menu", size=16, weight="bold"),
+                test_search_field,
+                ft.Container(content=test_list_view, expand=True),
+            ],
+            expand=True,
+            spacing=8,
+        ),
+        padding=pt_scale(page, 10),
+        border=ft.Border(right=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT))
+        if hasattr(ft.Colors, "OUTLINE_VARIANT")
+        else ft.Border(right=ft.BorderSide(1, ft.Colors.GREY)),
+    )
+
+    # ----------------------------
+    # Right panel header
+    # ----------------------------
+    test_title = ft.Text("Select a test", size=22, weight="bold")
+
+    add_data_btn = ft.FilledButton(
+        "Add Lab Data",
+        icon=ft.Icons.ADD,
+        on_click=lambda e: open_add_lab_data(),
+        disabled=True,
+    )
+
+    right_header = ft.Row(
         [
-            ft.Text("Results", size=18, weight="bold"),
+            test_title,
             ft.Container(expand=True),
-            ft.FilledButton(
-                "Add Result",
-                icon=ft.Icons.ADD,
-                on_click=lambda e: open_new_result_for_selected(),
-                disabled=True,  # enabled only when a report is selected
-            ),
+            add_data_btn,
         ],
-        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        alignment=ft.MainAxisAlignment.START,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        spacing=10,
     )
 
-    def _set_results_enabled(enabled: bool):
-        results_header_row.controls[2].disabled = not enabled
-        try:
-            results_header_row.update()
-            page.update()
-        except Exception:
-            pass
-
-    def select_report(report_id: int):
-        page._labs_selected_report_id = int(report_id)
-        selected_report_text.value = f"Selected report: #{report_id}"
-        _set_results_enabled(True)
-
-        # Always repaint from DB first (unfiltered)
-        refresh_results(int(report_id), "")
-
-        # Then apply filter if user typed one
-        if (results_search_field.value or "").strip():
-            refresh_results(int(report_id), results_search_field.value)
-
-        try:
-            selected_report_text.update()
-            page.update()
-        except Exception:
-            pass
-
     # ----------------------------
-    # Search controls: Reports
-    # ----------------------------
-    def do_reports_search(_=None):
-        refresh_reports(reports_search_field.value)
-
-    reports_search_field = ft.TextField(
-        label="Search reports (facility, provider, notes)",
-        prefix_icon=ft.Icons.SEARCH,
-        dense=True,
-        width=pt_scale(page, 420),
-        on_submit=do_reports_search,
-    )
-
-    reports_search_btn = ft.FilledButton("Search", icon=ft.Icons.SEARCH, on_click=do_reports_search)
-
-    def do_reports_clear(_=None):
-        reports_search_field.value = ""
-        try:
-            reports_search_field.update()
-        except Exception:
-            pass
-        refresh_reports("")
-
-    reports_clear_btn = ft.OutlinedButton("Clear", icon=ft.Icons.CLOSE, on_click=do_reports_clear)
-
-    # ----------------------------
-    # Search controls: Results
-    # ----------------------------
-    def do_results_search(_=None):
-        rid = getattr(page, "_labs_selected_report_id", None)
-        if not rid:
-            show_snack(page, "Select a report first.", "orange")
-            return
-        refresh_results(int(rid), results_search_field.value)
-
-    results_search_field = ft.TextField(
-        label="Search results by test name",
-        prefix_icon=ft.Icons.SEARCH,
-        dense=True,
-        width=pt_scale(page, 340),
-        on_submit=do_results_search,
-    )
-
-    results_search_btn = ft.FilledButton("Search", icon=ft.Icons.SEARCH, on_click=do_results_search)
-
-    def do_results_clear(_=None):
-        results_search_field.value = ""
-        try:
-            results_search_field.update()
-        except Exception:
-            pass
-        rid = getattr(page, "_labs_selected_report_id", None)
-        if rid:
-            refresh_results(int(rid), "")
-
-    results_clear_btn = ft.OutlinedButton("Clear", icon=ft.Icons.CLOSE, on_click=do_results_clear)
-
-    # ----------------------------
-    # Dialog: Add/Edit Report
-    # ----------------------------
-    def _ensure_report_edit_dialog():
-        if getattr(page, "_lab_report_edit_dlg", None) is not None:
-            return page._lab_report_edit_dlg
-
-        # Fields (created once)
-        page._lr_collected = ft.TextField(label="Collected date (YYYY-MM-DD)")
-        page._lr_reported = ft.TextField(label="Reported date (YYYY-MM-DD)")
-        page._lr_provider = ft.TextField(label="Ordering provider")
-        page._lr_facility = ft.TextField(label="Facility")
-        page._lr_notes = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
-
-        def _close(_=None):
-            page._lab_report_edit_dlg.open = False
-            page.update()
-
-        def _save(_=None):
-            try:
-                rid = getattr(page, "_editing_lab_report_id", None)
-                collected = (page._lr_collected.value or "").strip() or None
-                reported = (page._lr_reported.value or "").strip() or None
-                provider = (page._lr_provider.value or "").strip() or None
-                facility = (page._lr_facility.value or "").strip() or None
-                notes = (page._lr_notes.value or "").strip() or None
-
-                if rid is None:
-                    new_id = create_lab_report(
-                        page.db_connection,
-                        patient_id,
-                        source_document_id=None,
-                        collected_date=collected,
-                        reported_date=reported,
-                        ordering_provider=provider,
-                        facility=facility,
-                        notes=notes,
-                    )
-                    show_snack(page, f"Lab report added (#{new_id}).", "blue")
-                else:
-                    updated = update_lab_report(
-                        page.db_connection,
-                        patient_id,
-                        int(rid),
-                        source_document_id=None,
-                        collected_date=collected,
-                        reported_date=reported,
-                        ordering_provider=provider,
-                        facility=facility,
-                        notes=notes,
-                    )
-                    show_snack(
-                        page,
-                        "Lab report updated." if updated else "Lab report not found.",
-                        "blue" if updated else "orange",
-                    )
-
-                _close()
-                refresh_reports(reports_search_field.value)
-
-            except Exception as ex:
-                show_snack(page, f"Save report failed: {ex}", "red")
-
-        page._lab_report_edit_dlg = ft.AlertDialog(
-            modal=False,
-            title=ft.Text("Lab Report"),
-            content=ft.Container(
-                width=pt_scale(page, 520),
-                content=ft.Column(
-                    [
-                        ft.Row([page._lr_collected, page._lr_reported], wrap=True),
-                        page._lr_provider,
-                        page._lr_facility,
-                        page._lr_notes,
-                    ],
-                    tight=True,
-                    scroll=True,
-                ),
-            ),
-            actions=[
-                ft.TextButton("Cancel", on_click=_close),
-                ft.FilledButton("Save", icon=ft.Icons.SAVE, on_click=_save),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-            on_dismiss=_close,
-        )
-
-        page.overlay.append(page._lab_report_edit_dlg)
-        page.update()
-        return page._lab_report_edit_dlg
-
-    def open_new_report(_=None):
-        page._editing_lab_report_id = None
-        dlg = _ensure_report_edit_dialog()
-        dlg.title = ft.Text("Add Lab Report")
-
-        page._lr_collected.value = ""
-        page._lr_reported.value = ""
-        page._lr_provider.value = ""
-        page._lr_facility.value = ""
-        page._lr_notes.value = ""
-
-        dlg.open = True
-        page.update()
-
-    def open_edit_report(report_row):
-        # (id, source_document_id, collected_date, reported_date, ordering_provider, facility, notes, created_at, updated_at)
-        rid, _doc, collected, reported, provider, facility, notes, _c, _u = report_row
-        page._editing_lab_report_id = int(rid)
-
-        dlg = _ensure_report_edit_dialog()
-        dlg.title = ft.Text("Edit Lab Report")
-
-        page._lr_collected.value = collected or ""
-        page._lr_reported.value = reported or ""
-        page._lr_provider.value = provider or ""
-        page._lr_facility.value = facility or ""
-        page._lr_notes.value = notes or ""
-
-        dlg.open = True
-        page.update()
-
-    # ----------------------------
-    # Dialog: Confirm Delete Report (confirmation + snack)
-    # ----------------------------
-    def _ensure_report_delete_dialog():
-        if getattr(page, "_lab_report_delete_dlg", None) is not None:
-            return page._lab_report_delete_dlg
-
-        page._lab_report_delete_text = ft.Text("")
-
-        def _close(_=None):
-            page._lab_report_delete_dlg.open = False
-            page._pending_lab_report_delete = None
-            page.update()
-
-        def _confirm(_=None):
-            pending = page._pending_lab_report_delete
-            if not pending:
-                _close()
-                return
-
-            report_id, _label = pending
-            try:
-                deleted = delete_lab_report(page.db_connection, patient_id, int(report_id))
-                _close()
-                refresh_reports(reports_search_field.value)
-
-                # If the selected report was deleted, clear selection/results
-                if getattr(page, "_labs_selected_report_id", None) == int(report_id):
-                    page._labs_selected_report_id = None
-                    selected_report_text.value = "Select a report to see results."
-                    _set_results_enabled(False)
-                    results_table.rows = []
-                    try:
-                        results_table.update()
-                        selected_report_text.update()
-                        page.update()
-                    except Exception:
-                        pass
-
-                if deleted:
-                    show_snack(page, "Lab report deleted.", "blue")
-                else:
-                    show_snack(page, "Lab report not found.", "orange")
-            except Exception as ex:
-                show_snack(page, f"Delete report failed: {ex}", "red")
-
-        page._lab_report_delete_dlg = ft.AlertDialog(
-            modal=False,
-            title=ft.Text("Confirm Delete"),
-            content=page._lab_report_delete_text,
-            actions=[
-                ft.TextButton("Cancel", on_click=_close),
-                ft.FilledButton("Delete", icon=ft.Icons.DELETE, on_click=_confirm),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-            on_dismiss=_close,
-        )
-
-        page.overlay.append(page._lab_report_delete_dlg)
-        page.update()
-        return page._lab_report_delete_dlg
-
-    def open_delete_report(report_id: int, label: str):
-        page._pending_lab_report_delete = (int(report_id), label or "")
-        dlg = _ensure_report_delete_dialog()
-        page._lab_report_delete_text.value = f'Delete lab report "{label}"?\n\nThis will also delete all results in that report.'
-        dlg.open = True
-        page.update()
-
-    # ----------------------------
-    # Dialog: Add/Edit Result
+    # Dialog: Add Lab Data (add a result to an existing or new report)
     # ----------------------------
     def _ensure_result_edit_dialog():
         if getattr(page, "_lab_result_edit_dlg", None) is not None:
             return page._lab_result_edit_dlg
 
         page._lx_test = ft.TextField(label="Test name*", autofocus=True)
-        page._lx_value_text = ft.TextField(label="Value (text)*")  # <-- YOU NEED THIS
+        page._lx_value_text = ft.TextField(label="Value (text)*")
         page._lx_unit = ft.TextField(label="Unit")
+        page._lx_ref_range = ft.TextField(label="Reference range (e.g. 70-130)")
         page._lx_flag = ft.TextField(label="Abnormal flag (H/L/A/N)")
         page._lx_date = ft.TextField(label="Result date (YYYY-MM-DD)")
         page._lx_notes = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
+        page._lx_report_selector = ft.Dropdown(
+            label="Attach to report",
+            width=pt_scale(page, 460),
+        )
 
         def _close(_=None):
             page._lab_result_edit_dlg.open = False
             page.update()
 
-        def _default_result_date_for_report(report_id: int) -> str:
-            cached = page._labs_report_cache.get(int(report_id))
-            if cached:
-                _id, _doc, collected, reported, *_rest = cached
-                d = (collected or reported or "").strip()
-                if d:
-                    return d
-            return date.today().isoformat()
-
         def _save(_=None):
-            test_name = (page._lx_test.value or "").strip()
+            test_name_val = (page._lx_test.value or "").strip()
             value_text = (page._lx_value_text.value or "").strip()
 
-            if not test_name:
+            if not test_name_val:
                 show_snack(page, "Test name is required.", "red")
                 return
             if not value_text:
@@ -753,37 +645,62 @@ def get_labs_view(page: ft.Page):
                 return
 
             try:
-                report_id = getattr(page, "_editing_lab_result_report_id", None)
-                if not report_id:
-                    show_snack(page, "Select a report first.", "orange")
-                    return
+                # Get or create report
+                report_id = None
+                if page._lx_report_selector.value:
+                    report_id = int(page._lx_report_selector.value)
 
                 result_id = getattr(page, "_editing_lab_result_id", None)
+                report_id_for_edit = getattr(page, "_editing_lab_result_report_id", None)
+
+                if result_id is not None:
+                    # Editing existing result
+                    report_id = report_id_for_edit or report_id
+
+                if not report_id:
+                    # Create a new report with today's date
+                    today = date.today().isoformat()
+                    report_id = create_lab_report(
+                        page.db_connection,
+                        patient_id,
+                        collected_date=today,
+                        reported_date=today,
+                    )
 
                 unit = (page._lx_unit.value or "").strip() or None
                 flag = (page._lx_flag.value or "").strip() or None
                 notes = (page._lx_notes.value or "").strip() or None
-
-                # Trend-friendly numeric extraction
                 value_num = _parse_value_num(value_text)
 
-                # Trend-friendly date defaulting
                 rdate = (page._lx_date.value or "").strip() or None
                 if not rdate:
-                    rdate = _default_result_date_for_report(int(report_id))
+                    rdate = date.today().isoformat()
+
+                # Parse ref range text into low/high
+                ref_range_raw = (page._lx_ref_range.value or "").strip() or None
+                ref_low = None
+                ref_high = None
+                if ref_range_raw:
+                    m = re.match(r"([\d.]+)\s*[-–]\s*([\d.]+)", ref_range_raw)
+                    if m:
+                        try:
+                            ref_low = float(m.group(1))
+                            ref_high = float(m.group(2))
+                        except ValueError:
+                            pass
 
                 if result_id is None:
                     new_id = add_lab_result(
                         page.db_connection,
                         patient_id,
                         int(report_id),
-                        test_name=test_name,
+                        test_name=test_name_val,
                         value_text=value_text,
                         value_num=value_num,
                         unit=unit,
-                        ref_range_text=None,
-                        ref_low=None,
-                        ref_high=None,
+                        ref_range_text=ref_range_raw,
+                        ref_low=ref_low,
+                        ref_high=ref_high,
                         ref_unit=None,
                         abnormal_flag=flag,
                         result_date=rdate,
@@ -796,22 +713,29 @@ def get_labs_view(page: ft.Page):
                         patient_id,
                         int(report_id),
                         int(result_id),
-                        test_name=test_name,
+                        test_name=test_name_val,
                         value_text=value_text,
-                        value_num=value_num,  # <-- keep numeric data on edits
+                        value_num=value_num,
                         unit=unit,
-                        ref_range_text=None,
-                        ref_low=None,
-                        ref_high=None,
+                        ref_range_text=ref_range_raw,
+                        ref_low=ref_low,
+                        ref_high=ref_high,
                         ref_unit=None,
                         abnormal_flag=flag,
                         result_date=rdate,
                         notes=notes,
                     )
-                    show_snack(page, "Result updated." if updated else "Result not found.", "blue" if updated else "orange")
+                    show_snack(
+                        page,
+                        "Result updated." if updated else "Result not found.",
+                        "blue" if updated else "orange",
+                    )
 
                 _close()
-                select_report(int(report_id))
+                # Refresh test menu and current test view
+                _build_test_menu(test_search_field.value or None)
+                page._labs_selected_test_name = test_name_val
+                refresh_for_test(test_name_val)
 
             except Exception as ex:
                 show_snack(page, f"Save result failed: {ex}", "red")
@@ -825,8 +749,10 @@ def get_labs_view(page: ft.Page):
                     [
                         page._lx_test,
                         ft.Row([page._lx_value_text, page._lx_unit], wrap=True),
+                        page._lx_ref_range,
                         ft.Row([page._lx_flag, page._lx_date], wrap=True),
                         page._lx_notes,
+                        page._lx_report_selector,
                     ],
                     tight=True,
                     scroll=True,
@@ -844,38 +770,63 @@ def get_labs_view(page: ft.Page):
         page.update()
         return page._lab_result_edit_dlg
 
-    def open_new_result_for_selected(_=None):
-        rid = getattr(page, "_labs_selected_report_id", None)
-        if not rid:
-            show_snack(page, "Select a report first.", "orange")
-            return
+    def _populate_report_dropdown():
+        """Fill the report dropdown with existing reports."""
+        try:
+            reports = list_lab_reports(page.db_connection, patient_id, search="", limit=100)
+        except Exception:
+            reports = []
+
+        options = [ft.dropdown.Option(key="", text="(Create new report)")]
+        for r in reports:
+            rid, _doc, collected, _reported, provider, facility, _notes, _c, _u = r
+            label_parts = []
+            if collected:
+                label_parts.append(collected)
+            if facility:
+                label_parts.append(facility)
+            if provider:
+                label_parts.append(provider)
+            label = " - ".join(label_parts) if label_parts else f"Report #{rid}"
+            options.append(ft.dropdown.Option(key=str(rid), text=label))
+
+        page._lx_report_selector.options = options
+
+    def open_add_lab_data(_=None):
+        selected_test = page._labs_selected_test_name or ""
 
         page._editing_lab_result_id = None
-        page._editing_lab_result_report_id = int(rid)
+        page._editing_lab_result_report_id = None
 
         dlg = _ensure_result_edit_dialog()
-        dlg.title = ft.Text("Add Result")
+        dlg.title = ft.Text("Add Lab Data")
 
-        page._lx_test.value = ""
+        page._lx_test.value = selected_test
         page._lx_value_text.value = ""
         page._lx_unit.value = ""
+        page._lx_ref_range.value = ""
         page._lx_flag.value = ""
         page._lx_date.value = ""
         page._lx_notes.value = ""
+
+        _populate_report_dropdown()
+        page._lx_report_selector.value = ""
 
         dlg.open = True
         page.update()
 
     def open_edit_result(result_row):
-        # (id, test_name, value_text, value_num, unit, ref_range_text, ref_low, ref_high, ref_unit, abnormal_flag, result_date, notes, created_at, updated_at)
-        rid = getattr(page, "_labs_selected_report_id", None)
-        if not rid:
-            show_snack(page, "Select a report first.", "orange")
-            return
+        """Open the edit dialog pre-populated with existing values."""
+        (
+            result_id, test_name, value_text, value_num, unit,
+            ref_range_text, ref_low, ref_high, ref_unit,
+            flag, result_date, notes,
+            report_id, source_document_id, collected_date,
+            _c, _u,
+        ) = result_row
 
-        result_id, test_name, value_text, _vn, unit, _rrt, _rl, _rh, _ru, flag, rdate, notes, _c, _u = result_row
         page._editing_lab_result_id = int(result_id)
-        page._editing_lab_result_report_id = int(rid)
+        page._editing_lab_result_report_id = int(report_id)
 
         dlg = _ensure_result_edit_dialog()
         dlg.title = ft.Text("Edit Result")
@@ -883,15 +834,19 @@ def get_labs_view(page: ft.Page):
         page._lx_test.value = test_name or ""
         page._lx_value_text.value = value_text or ""
         page._lx_unit.value = unit or ""
+        page._lx_ref_range.value = ref_range_text or ""
         page._lx_flag.value = flag or ""
-        page._lx_date.value = rdate or ""
+        page._lx_date.value = result_date or ""
         page._lx_notes.value = notes or ""
+
+        _populate_report_dropdown()
+        page._lx_report_selector.value = str(report_id)
 
         dlg.open = True
         page.update()
 
     # ----------------------------
-    # Dialog: Confirm Delete Result (confirmation + snack)
+    # Dialog: Confirm Delete Result
     # ----------------------------
     def _ensure_result_delete_dialog():
         if getattr(page, "_lab_result_delete_dlg", None) is not None:
@@ -915,9 +870,9 @@ def get_labs_view(page: ft.Page):
                 deleted = delete_lab_result(page.db_connection, patient_id, int(result_id))
                 _close()
 
-                rid = getattr(page, "_labs_selected_report_id", None)
-                if rid:
-                    refresh_results(int(rid), results_search_field.value)
+                # Refresh current view
+                _build_test_menu(test_search_field.value or None)
+                refresh_for_test()
 
                 if deleted:
                     show_snack(page, "Result deleted.", "blue")
@@ -950,51 +905,45 @@ def get_labs_view(page: ft.Page):
         page.update()
 
     # ----------------------------
-    # Initial load (quiet)
+    # Initial load
     # ----------------------------
-    try:
-        initial_reports = list_lab_reports(page.db_connection, patient_id, search="", limit=500)
-    except Exception as ex:
-        show_snack(page, f"Load reports failed: {ex}", "red")
-        initial_reports = []
-    _build_report_rows(initial_reports)
+    _build_test_menu()
 
-    # results start empty until selection
-    results_table.rows = []
-    _set_results_enabled(False)
+    if page._labs_selected_test_name:
+        add_data_btn.disabled = False
+        refresh_for_test(page._labs_selected_test_name)
+    else:
+        chart_container.content = ft.Text(
+            "Select a test from the menu to view trends.",
+            italic=True,
+        )
 
     # ----------------------------
     # Layout
     # ----------------------------
-    reports_header = ft.Row(
+    right_panel = ft.Column(
         [
-            ft.Text("Labs", size=20, weight="bold"),
-            ft.Container(expand=True),
-            ft.FilledButton("Add Lab Report", icon=ft.Icons.ADD, on_click=open_new_report),
+            right_header,
+            chart_container,
+            ft.Divider(),
+            ft.Text("Historical Test Table", size=16, weight="bold"),
+            results_container,
         ],
-        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        expand=True,
+        scroll=True,
+        spacing=10,
     )
 
     return themed_panel(
         page,
-        ft.Column(
+        ft.Row(
             [
-                reports_header,
-                ft.Row([reports_search_field, reports_search_btn, reports_clear_btn], wrap=True),
-                ft.Divider(),
-                reports_container,
-
-                ft.Divider(height=pt_scale(page, 24)),
-                ft.Row([ft.Text("Lab Results", size=20, weight="bold")]),
-                selected_report_text,
-                ft.Row([results_search_field, results_search_btn, results_clear_btn], wrap=True),
-                results_header_row,
-                ft.Divider(),
-                results_container,
+                test_menu_panel,
+                ft.Container(content=right_panel, expand=True, padding=pt_scale(page, 10)),
             ],
             expand=True,
-            scroll=True,
+            vertical_alignment=ft.CrossAxisAlignment.START,
         ),
-        padding=pt_scale(page, 16),
+        padding=pt_scale(page, 10),
         radius=10,
     )

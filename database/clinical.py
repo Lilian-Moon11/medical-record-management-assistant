@@ -159,6 +159,44 @@ def delete_lab_result(conn, patient_id, result_id):
     conn.commit()
     return cur.rowcount
 
+# Test-centric queries (for Labs redesign)
+def list_distinct_test_names(conn, patient_id, search=None):
+    """Return sorted unique test names across all lab_results for a patient."""
+    cur = conn.cursor()
+    params = [patient_id]
+    sql = "SELECT DISTINCT test_name FROM lab_results WHERE patient_id = ?"
+    if search:
+        sql += " AND test_name LIKE ?"
+        params.append(_like(search))
+    sql += " ORDER BY test_name COLLATE NOCASE ASC"
+    cur.execute(sql, tuple(params))
+    return [row[0] for row in cur.fetchall()]
+
+def list_all_results_for_test(conn, patient_id, test_name):
+    """Return all lab_results rows for a given test_name across all reports,
+    joined with lab_reports for source_document_id and collected_date.
+    Ordered by result_date ASC for chronological charting.
+    
+    Returns rows shaped:
+    (result_id, test_name, value_text, value_num, unit, ref_range_text,
+     ref_low, ref_high, ref_unit, abnormal_flag, result_date, notes,
+     report_id, source_document_id, collected_date, created_at, updated_at)
+    """
+    cur = conn.cursor()
+    sql = """
+        SELECT r.id, r.test_name, r.value_text, r.value_num, r.unit,
+               r.ref_range_text, r.ref_low, r.ref_high, r.ref_unit,
+               r.abnormal_flag, r.result_date, r.notes,
+               r.report_id, lr.source_document_id, lr.collected_date,
+               r.created_at, r.updated_at
+        FROM lab_results r
+        LEFT JOIN lab_reports lr ON lr.id = r.report_id AND lr.patient_id = r.patient_id
+        WHERE r.patient_id = ? AND r.test_name = ?
+        ORDER BY COALESCE(r.result_date, lr.collected_date) ASC, r.id ASC
+    """
+    cur.execute(sql, (patient_id, test_name))
+    return cur.fetchall()
+
 # Documents
 def get_patient_documents(conn, patient_id):
     cur = conn.cursor()

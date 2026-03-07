@@ -13,7 +13,7 @@
 # (core, patient, clinical) to provide a clean, centralized import surface
 # for the rest of the application.
 #
-# By importing from `database` instead of individual submodules, the app:
+# By importing from database instead of individual submodules, the app:
 # - Avoids deep import paths throughout the codebase
 # - Keeps database-layer boundaries clear and consistent
 # - Makes internal refactoring safer (submodule structure can change
@@ -25,7 +25,7 @@
 # - Clinical data (providers, labs, documents) (clinical)
 #
 # Design goal:
-# Act as a stable façade over the database layer so higher-level UI and
+# Act as a stable facade over the database layer so higher-level UI and
 # business logic remain decoupled from internal storage structure.
 # -----------------------------------------------------------------------------
 
@@ -54,6 +54,7 @@ from .clinical import (
     list_providers, create_provider, update_provider, delete_provider,
     list_lab_reports, create_lab_report, update_lab_report, delete_lab_report,
     list_lab_results_for_report, add_lab_result, update_lab_result, delete_lab_result,
+    list_distinct_test_names, list_all_results_for_test,
     get_patient_documents, add_document, delete_document, 
     get_document_metadata, get_document_metadata as get_document_path 
 )
