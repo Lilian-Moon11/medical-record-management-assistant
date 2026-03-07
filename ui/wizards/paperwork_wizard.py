@@ -212,6 +212,7 @@ class PaperworkWizard:
 
         # 2. DROPDOWNS
         self.prov_to_dropdown = ft.Dropdown(label="Send Records To:")
+        self.prov_to_dropdown.on_select = self._on_recipient_change
         self.prov_from_dropdown = ft.Dropdown(label="Records From (Saved Providers):")
 
         # 3. UI STRUCTURE
@@ -273,6 +274,12 @@ class PaperworkWizard:
 
     def on_form_change(self, e: ft.ControlEvent):
         self.selected_type = e.control.value
+
+    def _on_recipient_change(self, e):
+        """Enable Next once a recipient is selected."""
+        has_selection = bool(getattr(e, 'data', None) or self.prov_to_dropdown.value)
+        self.next_btn.disabled = not has_selection
+        self.next_btn.update()
         
     def open(self):
         if self.dlg not in self.page.overlay:
@@ -353,6 +360,9 @@ class PaperworkWizard:
                 ]
                 self.prov_from_dropdown.options = from_opts
 
+                # Disable Next until a recipient is selected
+                self.next_btn.disabled = not self.prov_to_dropdown.value
+
                 self.content_area.controls.extend(
                     [
                         self.prov_from_dropdown,
@@ -365,10 +375,12 @@ class PaperworkWizard:
                     ]
                 )
             else:
-                # If ROI not selected, skip to review
+                # Non-ROI: ensure Next is enabled, then skip to review
+                self.next_btn.disabled = False
                 self.next_step()
 
         elif self.step == 3:
+            self.next_btn.disabled = False  # Re-enable after step 2 gate
             self.content_area.controls.append(
                 ft.Text("Step 3: Sign the Authorization", weight="bold", size=header_size)
             )

@@ -286,15 +286,26 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     # Historical results table
     # ----------------------------
+    _show_source = bool(getattr(page, "_show_source", False))
+    _show_updated = bool(getattr(page, "_show_updated", False))
+
+    results_cols = [
+        ft.DataColumn(ft.Text("Date")),
+        ft.DataColumn(ft.Text("Value")),
+        ft.DataColumn(ft.Text("Unit")),
+        ft.DataColumn(ft.Text("Flag")),
+    ]
+    if _show_source:
+        results_cols.append(ft.DataColumn(ft.Text("Source")))
+    if _show_updated:
+        results_cols.append(ft.DataColumn(ft.Text("Updated")))
+    results_cols += [
+        ft.DataColumn(ft.Text("Info")),
+        ft.DataColumn(ft.Text("Edit/Delete")),
+    ]
+
     results_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("Date")),
-            ft.DataColumn(ft.Text("Value")),
-            ft.DataColumn(ft.Text("Unit")),
-            ft.DataColumn(ft.Text("Flag")),
-            ft.DataColumn(ft.Text("Info")),
-            ft.DataColumn(ft.Text("Edit/Delete")),
-        ],
+        columns=results_cols,
         rows=[],
         column_spacing=pt_scale(page, 14),
         heading_row_height=pt_scale(page, 40),
@@ -433,13 +444,27 @@ def get_labs_view(page: ft.Page):
                 ru = ref_unit or unit or ""
                 rr = f"{lo}-{hi} {ru}".strip()
 
-            results_table.rows.append(
-                ft.DataRow(
-                    cells=[
+            cells = [
                         ft.DataCell(ft.Text(result_date)),
                         ft.DataCell(ft.Text(value_text or "")),
                         ft.DataCell(ft.Text(unit or "")),
                         ft.DataCell(_flag_chip(flag)),
+            ]
+            if _show_source:
+                # Source: resolve document name or show "User"
+                src_doc_id = x[13]
+                if src_doc_id:
+                    try:
+                        dm = get_document_metadata(page.db_connection, int(src_doc_id))
+                        src_label = dm[0] if dm else f"Doc #{src_doc_id}"
+                    except Exception:
+                        src_label = f"Doc #{src_doc_id}"
+                else:
+                    src_label = "User"
+                cells.append(ft.DataCell(ft.Text(src_label)))
+            if _show_updated:
+                cells.append(ft.DataCell(ft.Text(x[16] or "")))
+            cells += [
                         ft.DataCell(
                             ft.IconButton(
                                 icon=ft.Icons.INFO_OUTLINE,
@@ -463,8 +488,10 @@ def get_labs_view(page: ft.Page):
                                 ),
                             ], tight=True, spacing=0)
                         ),
-                    ]
-                )
+            ]
+
+            results_table.rows.append(
+                ft.DataRow(cells=cells)
             )
 
     # ----------------------------

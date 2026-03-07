@@ -43,6 +43,8 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
     current_theme = get_setting(page.db_connection, "ui.theme", "system")
     is_high_contrast = get_setting(page.db_connection, "ui.high_contrast", "0") == "1"
     is_large_text = get_setting(page.db_connection, "ui.large_text", "0") == "1"
+    is_show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
+    is_show_updated = get_setting(page.db_connection, "ui.show_updated", "0") == "1"
 
     # ── Export My Data ─────────────────────────────────────────────────────
     export_status = ft.Text("", size=pt_scale(page, 14))
@@ -101,6 +103,17 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
     hc_switch = ft.Switch(label="High contrast", value=is_high_contrast)
     lt_switch = ft.Switch(label="Large text", value=is_large_text)
 
+    def _auto_save_source(e):
+        set_setting(page.db_connection, "ui.show_source", "1" if source_cb.value else "0")
+        apply_settings_callback()
+
+    def _auto_save_updated(e):
+        set_setting(page.db_connection, "ui.show_updated", "1" if updated_cb.value else "0")
+        apply_settings_callback()
+
+    source_cb = ft.Checkbox(label="Show source of information", value=is_show_source, on_change=_auto_save_source)
+    updated_cb = ft.Checkbox(label="Show updated date", value=is_show_updated, on_change=_auto_save_updated)
+
     # 3. Logic: Save and Apply
     def save_settings(e):
         # Save to DB
@@ -118,11 +131,15 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         set_setting(page.db_connection, "ui.theme", "system")
         set_setting(page.db_connection, "ui.high_contrast", "0")
         set_setting(page.db_connection, "ui.large_text", "0")
+        set_setting(page.db_connection, "ui.show_source", "0")
+        set_setting(page.db_connection, "ui.show_updated", "0")
 
         # Reset Controls
         theme_dd.value = "system"
         hc_switch.value = False
         lt_switch.value = False
+        source_cb.value = False
+        updated_cb.value = False
         page.update()
 
         # Trigger visual update
@@ -423,11 +440,8 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     ft.Button("Reset Defaults", icon=ft.Icons.RESTART_ALT, on_click=reset_settings),
                 ]),
                 ft.Divider(),
-                ft.Text(
-                    "Note: High Contrast mode overrides the Theme selection.", 
-                    color=ft.Colors.GREY, 
-                    size=pt_scale(page, 14)
-                ),
+                source_cb,
+                updated_cb,
                 ft.Divider(),
                 ft.Text("Recovery Key", size=pt_scale(page, 18), weight="bold"),
                 ft.Text(

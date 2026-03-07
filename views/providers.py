@@ -45,15 +45,26 @@ def get_providers_view(page: ft.Page):
     # ----------------------------
     # Table (created early so funcs can reference it)
     # ----------------------------
+    _show_source = bool(getattr(page, "_show_source", False))
+    _show_updated = bool(getattr(page, "_show_updated", False))
+
+    prov_cols = [
+        ft.DataColumn(ft.Text("Name")),
+        ft.DataColumn(ft.Text("Specialty")),
+        ft.DataColumn(ft.Text("Clinic")),
+        ft.DataColumn(ft.Text("Phone")),
+    ]
+    if _show_source:
+        prov_cols.append(ft.DataColumn(ft.Text("Source")))
+    if _show_updated:
+        prov_cols.append(ft.DataColumn(ft.Text("Updated")))
+    prov_cols += [
+        ft.DataColumn(ft.Text("Edit")),
+        ft.DataColumn(ft.Text("Delete")),
+    ]
+
     table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("Name")),
-            ft.DataColumn(ft.Text("Specialty")),
-            ft.DataColumn(ft.Text("Clinic")),
-            ft.DataColumn(ft.Text("Phone")),
-            ft.DataColumn(ft.Text("Edit")),
-            ft.DataColumn(ft.Text("Delete")),
-        ],
+        columns=prov_cols,
         rows=[],
         column_spacing=pt_scale(page, 14),
         heading_row_height=pt_scale(page, 40),
@@ -75,13 +86,17 @@ def get_providers_view(page: ft.Page):
             # r: (id, name, specialty, clinic, phone, fax, email, address, notes, created_at, updated_at)
             pid, name, specialty, clinic, phone, _fax, _email, _addr, _notes, _c, _u = r
 
-            table.rows.append(
-                ft.DataRow(
-                    cells=[
+            cells = [
                         ft.DataCell(ft.Text(name or "")),
                         ft.DataCell(ft.Text(specialty or "")),
                         ft.DataCell(ft.Text(clinic or "")),
                         ft.DataCell(ft.Text(phone or "")),
+            ]
+            if _show_source:
+                cells.append(ft.DataCell(ft.Text("User")))
+            if _show_updated:
+                cells.append(ft.DataCell(ft.Text(_u or "")))
+            cells += [
                         ft.DataCell(
                             ft.IconButton(
                                 icon=ft.Icons.EDIT,
@@ -96,8 +111,10 @@ def get_providers_view(page: ft.Page):
                                 on_click=lambda e, pid=int(pid), nm=(name or ""): open_delete_provider(pid, nm),
                             )
                         ),
-                    ]
-                )
+            ]
+
+            table.rows.append(
+                ft.DataRow(cells=cells)
             )
 
     # ----------------------------

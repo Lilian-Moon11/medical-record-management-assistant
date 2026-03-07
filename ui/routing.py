@@ -66,6 +66,10 @@ def apply_settings(page, *, get_view_for_index):
         page.is_high_contrast = high_contrast
         page.ui_scale = 1.25 if large_text else 1.0
 
+        # Provenance columns in Health Record / Labs / Providers
+        page._show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
+        page._show_updated = get_setting(page.db_connection, "ui.show_updated", "0") == "1"
+
         # Refresh UI if dashboard exists
         if getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
             idx = page.nav_rail.selected_index

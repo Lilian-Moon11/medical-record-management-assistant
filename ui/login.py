@@ -284,13 +284,14 @@ def build_login_view(
 
     login_view = ft.Column(
         [
+            ft.Container(expand=True),  # top spacer
             ft.Icon(ft.Icons.SECURITY, size=64, color="blue"),
             ft.Text("Secure Login", size=30),
             password_field,
             ft.Button("Unlock Database", on_click=attempt_login),
             error_text,
             ft.TextButton("Forgot password?", on_click=lambda e: on_open_forgot_password()),
-            ft.Divider(height=20, color=ft.Colors.TRANSPARENT),
+            ft.Container(expand=True),  # bottom spacer pushes upload to bottom
             ft.TextButton(
                 "Upload Existing Profile",
                 icon=ft.Icons.UPLOAD_FILE,
@@ -301,9 +302,10 @@ def build_login_view(
                 import_progress,
                 import_status,
             ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Container(height=20),  # small bottom padding
         ],
-        alignment=ft.MainAxisAlignment.CENTER,
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        expand=True,
     )
 
     # Expose a small API back to main for logout/reset

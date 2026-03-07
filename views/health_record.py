@@ -74,8 +74,10 @@ def _ensure_sets(page: ft.Page) -> None:
     # Tracks the last state of a parent panel: {"section.demographics": True}
     if not hasattr(page, "_panel_vis"):
         page._panel_vis = {}
-    if not hasattr(page, "_show_provenance"):
-        page._show_provenance = False
+    if not hasattr(page, "_show_source"):
+        page._show_source = False
+    if not hasattr(page, "_show_updated"):
+        page._show_updated = False
 
 
 def _safe_update(ctrl: Any) -> None:
@@ -168,6 +170,18 @@ class ListRow(ft.Container):
         else:
             self.eye_btn = None
 
+        # Provenance: show source + updated per row (read-only)
+        self._prov_source_text = None
+        self._prov_updated_text = None
+        if bool(getattr(page, "_show_source", False)):
+            src_val = getattr(self.parent_panel, "_source", "") or "User"
+            self._prov_source_text = ft.Text(src_val, width=pt_scale(page, 80))
+            row_controls.append(self._prov_source_text)
+        if bool(getattr(page, "_show_updated", False)):
+            upd_val = getattr(self.parent_panel, "_updated_at", "") or "\u2014"
+            self._prov_updated_text = ft.Text(upd_val, width=pt_scale(page, 140))
+            row_controls.append(self._prov_updated_text)
+
         row_controls.extend([
             ft.IconButton(icon=ft.Icons.SAVE, tooltip="Save row", on_click=self.save_row),
             ft.IconButton(icon=ft.Icons.DELETE, tooltip="Remove", on_click=self.remove_row),
@@ -207,7 +221,7 @@ class ListRow(ft.Container):
         return d
 
     def save_row(self, e):
-        self.parent_panel.save_all()
+        self.parent_panel.save_all(triggering_row=self)
         show_snack(self._page, "Saved row.", "green")
 
     def remove_row(self, e):
@@ -238,6 +252,8 @@ class ListEditorBody(ft.Column):
         columns: List[Tuple[str, str]],
         is_section_sensitive: bool,
         on_save: Callable[[List[dict]], None],
+        source: str = "",
+        updated_at: str = "",
     ):
         super().__init__(tight=True, spacing=pt_scale(page, 10))
         self._page = page
@@ -246,6 +262,8 @@ class ListEditorBody(ft.Column):
         self.columns = columns
         self.is_section_sensitive = bool(is_section_sensitive)
         self.on_save = on_save
+        self._source = source
+        self._updated_at = updated_at
 
         _ensure_sets(page)
         self.panel_revealed = self._page._panel_vis.get(self.field_key, True)
@@ -270,7 +288,25 @@ class ListEditorBody(ft.Column):
             self.eye_btn = None
 
         header_controls.extend([ft.Container(expand=True), self.add_btn])
-        self.controls = [ft.Row(header_controls), self.rows_col]
+
+        panel_controls: List[Any] = [ft.Row(header_controls)]
+
+        # Column headers for provenance (matching row controls)
+        _ss = bool(getattr(page, "_show_source", False))
+        _su = bool(getattr(page, "_show_updated", False))
+        if _ss or _su:
+            header_labels: List[Any] = []
+            if _ss:
+                header_labels.append(ft.Text("Source", size=pt_scale(page, 12), weight="bold", width=pt_scale(page, 80)))
+            if _su:
+                header_labels.append(ft.Text("Updated", size=pt_scale(page, 12), weight="bold", width=pt_scale(page, 140)))
+            # Spacer to align with action buttons
+            header_labels.extend([ft.Container(width=pt_scale(page, 40)), ft.Container(width=pt_scale(page, 40))])
+            prov_header = ft.Row(header_labels, alignment=ft.MainAxisAlignment.END)
+            panel_controls.append(prov_header)
+
+        panel_controls.append(self.rows_col)
+        self.controls = panel_controls
 
     def toggle_panel_reveal(self, e):
         if not self.is_section_sensitive:
@@ -301,7 +337,7 @@ class ListEditorBody(ft.Column):
         self.rows_col.controls.remove(row_comp)
         _safe_update(self)
 
-    def save_all(self):
+    def save_all(self, triggering_row=None):
         cleaned: List[dict] = []
         for rc in self.row_components:
             d = rc.get_data_dict()
@@ -313,6 +349,20 @@ class ListEditorBody(ft.Column):
             if has_content:
                 cleaned.append(d)
         self.on_save(cleaned)
+
+        # Refresh updated timestamp only for the triggering row
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self._updated_at = now_str
+        self._source = "user"
+        target_rows = [triggering_row] if triggering_row else self.row_components
+        for rc in target_rows:
+            if rc._prov_updated_text:
+                rc._prov_updated_text.value = now_str
+                _safe_update(rc._prov_updated_text)
+            if rc._prov_source_text:
+                rc._prov_source_text.value = "user"
+                _safe_update(rc._prov_source_text)
 
 
 # -----------------------------------------------------------------------------
@@ -336,7 +386,8 @@ class CategoryPanel(ft.Column):
         self.is_section_sensitive = bool(is_section_sensitive)
 
         _ensure_sets(page)
-        self._show_prov = bool(getattr(page, "_show_provenance", False))
+        self._show_source = bool(getattr(page, "_show_source", False))
+        self._show_updated = bool(getattr(page, "_show_updated", False))
         
         self.panel_key = f"cat_{slugify_label(self.category_name)}"
         self.panel_revealed = self._page._panel_vis.get(self.panel_key, True)
@@ -347,11 +398,10 @@ class CategoryPanel(ft.Column):
             ft.DataColumn(ft.Text("Field Name")),
             ft.DataColumn(ft.Text("Value")),
         ]
-        if self._show_prov:
-            cols += [
-                ft.DataColumn(ft.Text("Source")),
-                ft.DataColumn(ft.Text("Updated")),
-            ]
+        if self._show_source:
+            cols.append(ft.DataColumn(ft.Text("Source")))
+        if self._show_updated:
+            cols.append(ft.DataColumn(ft.Text("Updated")))
         cols += [
             ft.DataColumn(ft.Text("Save")),
             ft.DataColumn(ft.Text("Delete")),
@@ -551,8 +601,10 @@ class CategoryPanel(ft.Column):
             ft.DataCell(field_tf),
             ft.DataCell(val_cell),
         ]
-        if self._show_prov:
-            cells += [ft.DataCell(src_text), ft.DataCell(upd_text)]
+        if self._show_source:
+            cells.append(ft.DataCell(src_text))
+        if self._show_updated:
+            cells.append(ft.DataCell(upd_text))
         cells += [
             ft.DataCell(ft.IconButton(icon=ft.Icons.SAVE, tooltip="Save", on_click=save_click)),
             ft.DataCell(del_btn),
@@ -664,6 +716,11 @@ def get_health_record_view(page: ft.Page):
     )
     sections += [demographics_panel, ft.Container(height=pt_scale(page, 10))]
 
+    def _list_meta(key):
+        """Extract source and updated_at from value_map for a list field."""
+        entry = value_map.get(key, {}) or {}
+        return entry.get("source", ""), entry.get("updated_at", "")
+
     allergies_panel = themed_panel(
         page,
         ListEditorBody(
@@ -673,8 +730,10 @@ def get_health_record_view(page: ft.Page):
             allergies_key,
             _load_json_list((value_map.get(allergies_key, {}) or {}).get("value")),
             [("substance", "Substance"), ("reaction", "Reaction"), ("severity", "Severity"), ("notes", "Notes")],
-            is_section_sensitive=is_sens(allergies_key),
+            is_section_sensitive=True,
             on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, allergies_key, json.dumps(items), "user"),
+            source=_list_meta(allergies_key)[0],
+            updated_at=_list_meta(allergies_key)[1],
         ),
         padding=pt_scale(page, 12),
     )
@@ -696,10 +755,12 @@ def get_health_record_view(page: ft.Page):
                 ("frequency", "Frequency"),
                 ("notes", "Notes")
             ],
-            is_section_sensitive=is_sens(meds_key),
+            is_section_sensitive=True,
             on_save=lambda items: upsert_patient_field_value(
                 page.db_connection, patient_id, meds_key, json.dumps(items), "user"
             ),
+            source=_list_meta(meds_key)[0],
+            updated_at=_list_meta(meds_key)[1],
         ),
         padding=pt_scale(page, 12),
     )
@@ -726,6 +787,8 @@ def get_health_record_view(page: ft.Page):
             on_save=lambda items: upsert_patient_field_value(
                 page.db_connection, patient_id, conditions_key, json.dumps(items), "user"
             ),
+            source=_list_meta(conditions_key)[0],
+            updated_at=_list_meta(conditions_key)[1],
         ),
         padding=pt_scale(page, 12),
     )
@@ -751,6 +814,8 @@ def get_health_record_view(page: ft.Page):
             on_save=lambda items: upsert_patient_field_value(
                 page.db_connection, patient_id, surgeries_key, json.dumps(items), "user"
             ),
+            source=_list_meta(surgeries_key)[0],
+            updated_at=_list_meta(surgeries_key)[1],
         ),
         padding=pt_scale(page, 12),
     )
@@ -774,8 +839,10 @@ def get_health_record_view(page: ft.Page):
                 ("phone", "Phone"),
                 ("notes", "Notes"),
             ],
-            is_section_sensitive=is_sens(insurance_key),
+            is_section_sensitive=True,
             on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, insurance_key, json.dumps(items), "user"),
+            source=_list_meta(insurance_key)[0],
+            updated_at=_list_meta(insurance_key)[1],
         ),
         padding=pt_scale(page, 12),
     )
