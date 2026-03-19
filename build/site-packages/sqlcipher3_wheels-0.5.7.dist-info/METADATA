@@ -1,0 +1,112 @@
+Metadata-Version: 2.4
+Name: sqlcipher3-wheels
+Version: 0.5.7
+Summary: DB-API 2.0 interface for SQLCipher 3.x
+Author-email: Charles Leifer <coleifer@gmail.com>, laggykiller <chaudominic2@gmail.com>
+License: zlib/libpng
+Project-URL: homepage, https://github.com/laggykiller/sqlcipher3
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX
+Classifier: Programming Language :: C
+Classifier: Programming Language :: Python
+Classifier: Topic :: Database :: Database Engines/Servers
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+sqlcipher3
+==========
+
+*NOTICE*: This is a fork of [sqlcipher3](https://github.com/coleifer/sqlcipher3)
+which adds github action for creating wheels for Windows, MacOS and Linux.
+The unofficial wheels from this fork are uploaded to `sqlcipher3-wheels` on pypi,
+while the official wheels are `sqlcipher3-binary`.
+To install openssl easily, conan is used. I made some reference with
+[this fork of pysqlite3 by Dobatymo](https://github.com/Dobatymo/pysqlite3)
+
+*NOTICE*: To build from this fork, copy `sqlite3.c` and `sqlite3.h`
+to `src/sqlcipher`, then run `pip wheel .` or `python -m build .`
+
+*NOTICE*: The wheels are built with sqlcipher version 4. You have to execute
+`PRAGMA cipher_compatibility = 3` before doing any operations on a database
+encrypted with SQLCipher version 3 when a newer version is installed.
+Keep in mind, you have to add `PRAGMA cipher_compatibility` after `PRAGMA key`:
+
+```python
+from sqlcipher3 import dbapi2 as sqlite
+conn = sqlite.connect('test.db')
+c = conn.cursor()
+c.execute("PRAGMA key='password'")
+c.execute("PRAGMA cipher_compatibility = 3")
+c.execute('''create table stocks (date text, trans text, symbol text, qty real, price real)''')
+c.execute("""insert into stocks values ('2006-01-05','BUY','RHAT',100,35.14)""")
+conn.commit()
+c.close()
+```
+
+This library takes [pysqlite3](https://github.com/coleifer/pysqlite3) and makes
+some small modifications so it is suitable for use with
+[sqlcipher](https://github.com/sqlcipher/sqlcipher) (sqlite with encryption).
+
+Additional features:
+
+* User-defined window functions (requires SQLite >= 3.25)
+* Flags and VFS an be specified when opening connection
+* Incremental BLOB I/O, [bpo-24905](https://github.com/python/cpython/pull/271)
+* Improved error messages, [bpo-16379](https://github.com/python/cpython/pull/1108)
+* Simplified detection of DML statements via `sqlite3_stmt_readonly`.
+* Sqlite native backup API (also present in standard library 3.7 and newer).
+
+A completely self-contained binary package (wheel) is available for versions
+0.4.0 and newer as `sqlcipher3-binary`. This package contains the latest
+release of sqlcipher compiled with numerous extensions, and requires no
+external dependencies.
+
+Building with System SQLCipher
+------------------------------
+
+To build `sqlcipher3` linked against the system SQLCipher, run:
+
+```
+$ python setup.py build
+```
+
+Building a statically-linked library
+------------------------------------
+
+To build `sqlcipher3` statically-linked against a particular version of
+SQLCipher, you need to obtain the SQLCipher source code and copy `sqlite3.c`
+and `sqlite3.h` into the source tree.
+
+```
+# Download the latest version of SQLCipher source code and build the source
+# amalgamation files (sqlite3.c and sqlite3.h).
+$ git clone https://github.com/sqlcipher/sqlcipher
+$ cd sqlcipher/
+$ ./configure
+$ make sqlite3.c
+
+# Copy the sqlcipher amalgamation files into the root of the sqlcipher3
+# checkout and run build_static + build:
+$ cp sqlcipher/sqlite3.[ch] sqlcipher3/
+$ cd sqlcipher3
+$ python setup.py build_static build
+```
+
+You now have a statically-linked, completely self-contained `sqlcipher3`.
+
+Using the binary package
+------------------------
+
+A binary package (wheel) is available for linux with a completely
+self-contained  `sqlcipher3`, statically-linked against the most recent release
+of sqlcipher.
+
+```
+$ pip install sqlcipher3-binary
+```
+

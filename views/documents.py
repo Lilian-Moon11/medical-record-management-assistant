@@ -1,4 +1,4 @@
-# Copyright (C) 2026 Lilian-Moon11
+﻿# Copyright (C) 2026 Lilian-Moon11
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,6 +14,7 @@
 # - Safe document ingestion with filename collision handling
 # - Native OS document opening
 # - Accessible confirmation UI for destructive actions (delete)
+# - AI (Beta): "Ask about your documents" query stub (Phase 5.0)
 #
 # DESIGN NOTES:
 # - Uses page.overlay for confirmation dialogs to ensure reliable rendering
@@ -62,7 +63,7 @@ def get_documents_view(page: ft.Page):
         page._delete_dialog_open = False
 
     if not hasattr(page, "_pending_delete"):
-        page._pending_delete = None  
+        page._pending_delete = None
 
     def close_delete_dlg(_=None):
         dlg = page._delete_dlg
@@ -207,7 +208,7 @@ def get_documents_view(page: ft.Page):
         except Exception:
             pass
         page.update()
-    
+
     def refresh_table(filter_text: str = "", update_ui: bool = False):
         nonlocal all_docs
         rows: list[ft.DataRow] = []
@@ -253,7 +254,7 @@ def get_documents_view(page: ft.Page):
             )
 
         data_table.rows = rows
-        
+
         if update_ui:
             try:
                 data_table.update()
@@ -330,7 +331,132 @@ def get_documents_view(page: ft.Page):
             print(f"Upload Error: {ex}")
             show_snack(page, f"Error: {str(ex)}", "red")
 
-    # 6. INITIAL LAYOUT BUILD
+    # 6. AI QUERY STUB (Phase 5.0) -----------------------------------------------
+    # Checks whether any chunks have been indexed for this patient.
+    # If not, the input is disabled with an accessible plain-language message.
+
+    def _has_indexed_chunks() -> bool:
+        try:
+            cur = page.db_connection.cursor()
+            cur.execute(
+                "SELECT 1 FROM document_chunks WHERE patient_id=? LIMIT 1",
+                (patient_id,),
+            )
+            return cur.fetchone() is not None
+        except Exception:
+            return False
+
+    ai_question = ft.TextField(
+        label="Ask a question about your documents",
+        hint_text="e.g. What medications am I currently taking?",
+        multiline=False,
+        expand=True,
+    )
+    ai_response = ft.Text(
+        "",
+        selectable=True,
+        size=pt_scale(page, 13),
+    )
+    ai_citations = ft.Column([], spacing=2)
+
+    _chunks_ready = _has_indexed_chunks()
+
+    if not _chunks_ready:
+        ai_question.disabled = True
+        ai_question.hint_text = (
+            "Document analysis is not ready yet. "
+            "Upload documents and allow the app to process them first."
+        )
+
+    def _handle_ai_query(e: ft.ControlEvent):
+        question = ai_question.value.strip()
+        if not question:
+            return
+        ai_response.value = "Thinking..."
+        ai_citations.controls.clear()
+        try:
+            page.update()
+        except Exception:
+            pass
+
+        try:
+            from ai.query import query_documents
+            result = query_documents(
+                page.db_connection,
+                patient_id,
+                question,
+            )
+            ai_response.value = result.get("response", "")
+            ai_citations.controls = [
+                ft.Text(
+                    f"Source: {c.get('source_file_name', 'unknown')}, "
+                    f"page {c.get('page_number', '?')}",
+                    size=pt_scale(page, 11),
+                    color=ft.Colors.GREY_600,
+                    italic=True,
+                )
+                for c in result.get("citations", [])
+            ]
+        except Exception as ex:
+            ai_response.value = f"Could not complete the query: {ex}"
+
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    ai_card = ft.Card(
+        content=ft.Container(
+            padding=pt_scale(page, 16),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(ft.Icons.AUTO_AWESOME, color=ft.Colors.PURPLE_400),
+                            ft.Text(
+                                "Ask About Your Documents",
+                                weight="bold",
+                                size=pt_scale(page, 15),
+                            ),
+                            ft.Container(
+                                content=ft.Text(
+                                    "AI (Beta)",
+                                    size=pt_scale(page, 10),
+                                    color=ft.Colors.WHITE,
+                                ),
+                                bgcolor=ft.Colors.PURPLE_400,
+                                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                border_radius=4,
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                    ft.Text(
+                        "Ask a plain-language question. Answers come from your uploaded documents only.",
+                        size=pt_scale(page, 12),
+                        color=ft.Colors.GREY_600,
+                    ),
+                    ft.Row(
+                        [
+                            ai_question,
+                            ft.ElevatedButton(
+                                "Ask",
+                                icon=ft.Icons.SEND,
+                                disabled=not _chunks_ready,
+                                on_click=_handle_ai_query,
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                    ai_response,
+                    ai_citations,
+                ],
+                spacing=10,
+            ),
+        ),
+    )
+
+    # 7. INITIAL LAYOUT BUILD
     refresh_table(update_ui=False)
 
     return ft.Container(
@@ -353,6 +479,8 @@ def get_documents_view(page: ft.Page):
                 search_field,
                 ft.Divider(),
                 ft.Column([data_table], scroll=ft.ScrollMode.AUTO, expand=True),
+                ft.Divider(),
+                ai_card,
             ],
             expand=True,
         ),
