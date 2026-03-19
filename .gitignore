@@ -38,8 +38,13 @@ logs/
 
 # --- Build Files (Flet & PyInstaller) ---
 dist/
-# build/ is kept so build scripts and lpa.spec are version-controlled
+# build/ is kept so build scripts and lpa.spec are version-controlled.
 # Only the generated output inside build/ is ignored:
 build/windows/
 build/macos/
 build/linux/
+build/flutter/
+build/site-packages/
+build/lpa/
+build/*.pkg
+build/*.exe

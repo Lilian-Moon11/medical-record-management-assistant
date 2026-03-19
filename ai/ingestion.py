@@ -49,11 +49,19 @@ def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str]]:
     Returns list of (page_number, text) tuples (1-indexed pages).
 
     Fallback chain:
+      0. Plain text file (.txt) — returned directly
       1. PDF with embedded text (pypdf)
       2. Scanned PDF (pdf2image + rapidocr)
       3. Image file (rapidocr directly)
     """
     name_lower = file_name.lower()
+
+    # Plain text passthrough (no PDF/OCR needed)
+    if name_lower.endswith(".txt"):
+        try:
+            return [(1, file_bytes.decode("utf-8", errors="replace"))]
+        except Exception:
+            return []
 
     if name_lower.endswith(".pdf"):
         # Try embedded text first (fast, lossless)
