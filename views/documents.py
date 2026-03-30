@@ -1,4 +1,4 @@
-﻿# Copyright (C) 2026 Lilian-Moon11
+# Copyright (C) 2026 Lilian-Moon11
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -33,8 +33,11 @@ import flet as ft
 import os
 import asyncio
 import tempfile
+import threading
 from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes, decrypt_bytes
 from datetime import datetime
+from ai.ingestion import run_ingestion
+from core import paths
 
 from database import (
     get_patient_documents,
@@ -283,11 +286,10 @@ def get_documents_view(page: ft.Page):
             show_snack(page, "Picker returned no local path.", "red")
             return
 
-        # Path Calculation
-        current_file_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(current_file_dir)
-        dest_dir = os.path.join(project_root, "data", str(patient_id))
+        # Destination: user data dir / data / <patient_id> / (via paths module)
+        dest_dir = str(paths.data_dir / str(patient_id))
         os.makedirs(dest_dir, exist_ok=True)
+
 
         # --- RENAME LOGIC ---
         original_name = picked.name
@@ -326,6 +328,30 @@ def get_documents_view(page: ft.Page):
 
             refresh_table(search_field.value, update_ui=True)
             show_snack(page, "Document uploaded securely.", "blue")
+
+            # Run ingestion in background; re-enable the AI card when done.
+            def _ingest():
+                try:
+                    run_ingestion(
+                        page.db_connection,
+                        page.db_key_raw,
+                        patient_id,
+                        str(paths.data_dir),
+                    )
+                finally:
+                    ready = _has_indexed_chunks()
+                    ai_question.disabled = not ready
+                    ask_btn.disabled = not ready
+                    if ready:
+                        ai_question.hint_text = (
+                            "e.g. What medications am I currently taking?"
+                        )
+                    try:
+                        page.update()
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_ingest, daemon=True).start()
 
         except Exception as ex:
             print(f"Upload Error: {ex}")
@@ -405,6 +431,13 @@ def get_documents_view(page: ft.Page):
         except Exception:
             pass
 
+    ask_btn = ft.ElevatedButton(
+        "Ask",
+        icon=ft.Icons.SEND,
+        disabled=not _chunks_ready,
+        on_click=_handle_ai_query,
+    )
+
     ai_card = ft.Card(
         content=ft.Container(
             padding=pt_scale(page, 16),
@@ -439,12 +472,7 @@ def get_documents_view(page: ft.Page):
                     ft.Row(
                         [
                             ai_question,
-                            ft.ElevatedButton(
-                                "Ask",
-                                icon=ft.Icons.SEND,
-                                disabled=not _chunks_ready,
-                                on_click=_handle_ai_query,
-                            ),
+                            ask_btn,
                         ],
                         spacing=8,
                     ),

@@ -5,17 +5,20 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "Building LPA portable (Windows)..." -ForegroundColor Cyan
 
-# Ensure PyInstaller is available
-if (-not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
-    Write-Host "Installing PyInstaller..." -ForegroundColor Yellow
-    pip install pyinstaller
+# Resolve pyinstaller from the venv (works without system-level install)
+$PyInstaller = ".venv\Scripts\pyinstaller.exe"
+if (-not (Test-Path $PyInstaller)) {
+    Write-Host "Installing PyInstaller into venv..." -ForegroundColor Yellow
+    .venv\Scripts\pip.exe install pyinstaller
 }
 
 # Clean previous build
-pyinstaller --clean build/lpa.spec
+& $PyInstaller --noconfirm --clean build/lpa.spec
+$buildExit = $LASTEXITCODE
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "PyInstaller failed. Check output above."
+if ($buildExit -ne 0) {
+    Write-Error "PyInstaller failed (exit $buildExit). Check output above."
+    exit $buildExit
 }
 
 # Zip the onedir output
