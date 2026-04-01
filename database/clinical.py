@@ -210,6 +210,9 @@ def add_document(conn, patient_id, file_name, file_path, upload_date):
 
 def delete_document(conn, document_id):
     cur = conn.cursor()
+    # Cascade delete AI data so deleted files don't haunt the Chat Assistant
+    cur.execute("DELETE FROM document_chunks WHERE doc_id = ?", (document_id,))
+    cur.execute("DELETE FROM ai_extraction_inbox WHERE doc_id = ?", (document_id,))
     cur.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
 

@@ -12,15 +12,13 @@ Issues & Support: https://github.com/Lilian-Moon11/local-patient-advocate/issues
 
 What This App Does
 
-Store medical documents (PDFs, records, reports) securely on your computer
-
-Organize records by patient profile
-
-Open documents when you need them, without permanently decrypting them
-
-Help prepare Release of Information (ROI) paperwork
-
-Work offline — no internet connection required
+- Store medical documents (PDFs, records, reports) securely on your computer
+- Organize records by patient profile
+- Automatically extract clinical information like Conditions or Medications from scanned OCR documents using a completely offline, local AI Pipeline.
+- Chat with your documents directly via the dashboard using a Local RAG AI Assistant.
+- Open documents when you need them, without permanently decrypting them
+- Help prepare Release of Information (ROI) paperwork
+- Work totally offline — no internet connection required
 
 This app is designed for people who care deeply about privacy and don’t want their medical information uploaded to third-party services.
 
@@ -86,7 +84,7 @@ If anything looks wrong, the app stops immediately to protect your data.
 Installation & Setup
 What You Need
 
-A computer with Python 3.10 or newer
+A computer with Python 3.12 (Strictly required for local AI / OCR pipelines)
 
 Windows, macOS, or Linux
 
@@ -95,17 +93,18 @@ git clone https://github.com/Lilian-Moon11/local-patient-advocate.git
 cd local-patient-advocate
 
 Step 2: (Recommended) Create a Virtual Environment
+To prevent dependency errors, explicitly use Python 3.12 when creating your environment.
 
 Windows
 
-python -m venv venv
-.\venv\Scripts\activate
+py -3.12 -m venv .venv
+.\.venv\Scripts\activate
 
 
 Mac / Linux
 
-python3 -m venv venv
-source venv/bin/activate
+python3.12 -m venv .venv
+source .venv/bin/activate
 
 Step 3: Install Required Packages
 pip install -r requirements.txt

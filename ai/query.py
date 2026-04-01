@@ -63,7 +63,9 @@ def query_documents(
         from ai.backend import get_llm
         llm = get_llm()
 
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     Settings.llm = llm
+    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
     chunks = _load_chunks(conn, patient_id)
     if not chunks:
@@ -111,3 +113,69 @@ def query_documents(
         "response": str(result),
         "citations": citations,
     }
+
+
+def query_documents_stream(
+    conn,
+    patient_id: int,
+    question: str,
+    llm=None,
+):
+    """
+    Query the patient's indexed document chunks and YIELD cited response chunks.
+    Yields dicts representing the stream state.
+    """
+    from llama_index.core import VectorStoreIndex, Document, Settings
+    from llama_index.core.query_engine import CitationQueryEngine
+
+    if llm is None:
+        from ai.backend import get_llm
+        llm = get_llm()
+
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    Settings.llm = llm
+    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+
+    chunks = _load_chunks(conn, patient_id)
+    if not chunks:
+        yield {
+            "type": "chunk", 
+            "text": "No documents have been indexed yet for this patient. Please allow the indexing process to finish, then try again."
+        }
+        yield {"type": "citations", "citations": []}
+        return
+
+    documents = [
+        Document(
+            text=c["chunk_text"],
+            metadata={
+                "doc_id": c["doc_id"],
+                "page_number": c["page_number"],
+                "source_file_name": c["source_file_name"] or "unknown",
+            },
+        )
+        for c in chunks
+    ]
+
+    index = VectorStoreIndex.from_documents(documents)
+    engine = CitationQueryEngine.from_args(index, similarity_top_k=5, streaming=True)
+
+    result = engine.query(question)
+
+    for text_chunk in result.response_gen:
+        yield {"type": "chunk", "text": text_chunk}
+
+    seen = set()
+    citations = []
+    for node in getattr(result, "source_nodes", []):
+        meta = node.metadata or {}
+        key = (meta.get("doc_id"), meta.get("page_number"))
+        if key not in seen:
+            seen.add(key)
+            citations.append({
+                "doc_id": meta.get("doc_id"),
+                "page_number": meta.get("page_number"),
+                "source_file_name": meta.get("source_file_name", "unknown"),
+            })
+
+    yield {"type": "citations", "citations": citations}

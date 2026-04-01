@@ -730,7 +730,7 @@ def get_health_record_view(page: ft.Page):
             allergies_key,
             _load_json_list((value_map.get(allergies_key, {}) or {}).get("value")),
             [("substance", "Substance"), ("reaction", "Reaction"), ("severity", "Severity"), ("notes", "Notes")],
-            is_section_sensitive=True,
+            is_section_sensitive=is_sens(allergies_key),
             on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, allergies_key, json.dumps(items), "user"),
             source=_list_meta(allergies_key)[0],
             updated_at=_list_meta(allergies_key)[1],
@@ -755,7 +755,7 @@ def get_health_record_view(page: ft.Page):
                 ("frequency", "Frequency"),
                 ("notes", "Notes")
             ],
-            is_section_sensitive=True,
+            is_section_sensitive=is_sens(meds_key),
             on_save=lambda items: upsert_patient_field_value(
                 page.db_connection, patient_id, meds_key, json.dumps(items), "user"
             ),
@@ -839,7 +839,7 @@ def get_health_record_view(page: ft.Page):
                 ("phone", "Phone"),
                 ("notes", "Notes"),
             ],
-            is_section_sensitive=True,
+            is_section_sensitive=is_sens(insurance_key),
             on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, insurance_key, json.dumps(items), "user"),
             source=_list_meta(insurance_key)[0],
             updated_at=_list_meta(insurance_key)[1],
@@ -875,7 +875,7 @@ def get_health_record_view(page: ft.Page):
                         ft.Text("Health Record", size=pt_scale(page, 22), weight="bold"),
                         ft.Container(expand=True),
                         ft.FilledTonalButton(
-                            "Edit Sensitivity",
+                            "Edit Security Features",
                             icon=ft.Icons.SHIELD,
                             on_click=lambda _: page.open_bulk_edit_dlg(),
                         ),

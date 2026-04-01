@@ -28,6 +28,7 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from crypto.file_crypto import decrypt_bytes, get_or_create_file_master_key
+from ai.extraction import extract_fields
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +166,31 @@ def _insert_chunks(conn, doc_id: int, patient_id: int,
     conn.commit()
 
 
+def _insert_suggestions(conn, patient_id: int, doc_id: int, suggestions: list[dict]) -> None:
+    cur = conn.cursor()
+    cur.executemany(
+        """
+        INSERT OR IGNORE INTO ai_extraction_inbox
+            (patient_id, doc_id, field_key, suggested_value, confidence, source_file_name, conflict, existing_value, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        """,
+        [
+            (
+                patient_id,
+                doc_id,
+                s["field_key"],
+                s["value"],
+                s["confidence"],
+                s["source_file_name"],
+                1 if s.get("conflict") else 0,
+                s.get("existing_value")
+            )
+            for s in suggestions
+        ]
+    )
+    conn.commit()
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -231,13 +257,30 @@ def run_ingestion(
         file_name = doc.get("file_name", "unknown")
         pages = _extract_text(plaintext, file_name)
 
+        full_text_parts = []
         for page_num, page_text in pages:
             if stop_event and stop_event.is_set():
                 break
+            full_text_parts.append(page_text)
             chunks = _chunk_text(page_text)
             if chunks:
                 _insert_chunks(conn, doc["id"], patient_id,
                                page_num, file_name, chunks)
+
+        if not (stop_event and stop_event.is_set()):
+            full_text = "\n".join(full_text_parts)
+            if full_text.strip():
+                try:
+                    suggestions = extract_fields(
+                        conn, 
+                        patient_id, 
+                        full_text, 
+                        file_name
+                    )
+                    if suggestions:
+                        _insert_suggestions(conn, patient_id, doc["id"], suggestions)
+                except Exception as ex:
+                    logger.error("Extraction failed for doc %d: %s", doc["id"], ex)
 
         if progress_cb:
             progress_cb(i + 1, total)

@@ -1,4 +1,4 @@
-﻿# Copyright (C) 2026 Lilian-Moon11
+# Copyright (C) 2026 Lilian-Moon11
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -46,6 +46,25 @@ def _ensure_schema(conn):
             created_at       TEXT,
             FOREIGN KEY(doc_id)     REFERENCES documents(id),
             FOREIGN KEY(patient_id) REFERENCES patients(id)
+        )
+    """)
+
+    # ── Phase 5.1: AI suggestion review inbox ─────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ai_extraction_inbox (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id       INTEGER NOT NULL,
+            doc_id           INTEGER,
+            field_key        TEXT,
+            suggested_value  TEXT,
+            confidence       REAL,
+            source_file_name TEXT,
+            conflict         INTEGER DEFAULT 0,
+            existing_value   TEXT,
+            status           TEXT DEFAULT 'pending',
+            UNIQUE(patient_id, field_key, suggested_value),
+            FOREIGN KEY(patient_id) REFERENCES patients(id),
+            FOREIGN KEY(doc_id)     REFERENCES documents(id)
         )
     """)
 

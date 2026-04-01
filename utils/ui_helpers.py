@@ -84,8 +84,12 @@ def show_snack(page: ft.Page, message: str, color=ft.Colors.GREEN):
 
         page._snack_text.value = message
         page.snack_bar.bgcolor = color
-        page.snack_bar.open = True
-        page.update()
+        
+        if hasattr(page, "open"):
+            page.open(page.snack_bar)
+        else:
+            page.snack_bar.open = True
+            page.update()
     except Exception as ex:
         print("SNACK ERROR:", ex, "| message:", message)
 

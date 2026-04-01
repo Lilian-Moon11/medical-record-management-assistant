@@ -695,7 +695,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
     # CREATE THE DIALOG ONCE
     page._bulk_edit_dlg = ft.AlertDialog(
         modal=False,
-        title=ft.Text("Enable/Disable Shield Features"),
+        title=ft.Text("Edit Security Features"),
         content=ft.Container(width=400, content=page._bulk_edit_col),
         actions=[
             ft.TextButton("Cancel", on_click=_close_bulk),

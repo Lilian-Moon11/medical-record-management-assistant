@@ -55,7 +55,11 @@ def get_documents_view(page: ft.Page):
         return ft.Text("No patient loaded.")
     patient_id = patient[0]
 
+    if not hasattr(page, "_doc_search_term"):
+        page._doc_search_term = ""
+
     search_field = ft.TextField(
+        value=page._doc_search_term,
         label="Search Records",
         prefix_icon=ft.Icons.SEARCH,
         width=300,
@@ -103,7 +107,12 @@ def get_documents_view(page: ft.Page):
                     print(f"Could not delete file {file_path}: {ex}")
                     show_snack(page, "Deleted record, but file could not be removed.", "orange")
 
-            refresh_table(search_field.value, update_ui=True)
+            if getattr(page, "content_area", None):
+                page.content_area.content = get_documents_view(page)
+                page.content_area.update()
+            else:
+                refresh_table(search_field.value, update_ui=True)
+                
             show_snack(page, "Record and file deleted.", "blue")
         except Exception as ex:
             print("DELETE ERROR:", ex)
@@ -261,10 +270,12 @@ def get_documents_view(page: ft.Page):
         if update_ui:
             try:
                 data_table.update()
+                page.update()
             except Exception:
                 pass
 
     def on_search_change(e: ft.ControlEvent):
+        page._doc_search_term = e.control.value
         refresh_table(e.control.value, update_ui=True)
 
     search_field.on_change = on_search_change
@@ -329,7 +340,7 @@ def get_documents_view(page: ft.Page):
             refresh_table(search_field.value, update_ui=True)
             show_snack(page, "Document uploaded securely.", "blue")
 
-            # Run ingestion in background; re-enable the AI card when done.
+            # Run ingestion in background
             def _ingest():
                 try:
                     run_ingestion(
@@ -338,18 +349,9 @@ def get_documents_view(page: ft.Page):
                         patient_id,
                         str(paths.data_dir),
                     )
-                finally:
-                    ready = _has_indexed_chunks()
-                    ai_question.disabled = not ready
-                    ask_btn.disabled = not ready
-                    if ready:
-                        ai_question.hint_text = (
-                            "e.g. What medications am I currently taking?"
-                        )
-                    try:
-                        page.update()
-                    except Exception:
-                        pass
+                    show_snack(page, "AI Extraction Complete! Check your Dashboard.", "green")
+                except Exception as ex:
+                    print(f"Ingestion error: {ex}")
 
             threading.Thread(target=_ingest, daemon=True).start()
 
@@ -357,135 +359,8 @@ def get_documents_view(page: ft.Page):
             print(f"Upload Error: {ex}")
             show_snack(page, f"Error: {str(ex)}", "red")
 
-    # 6. AI QUERY STUB (Phase 5.0) -----------------------------------------------
-    # Checks whether any chunks have been indexed for this patient.
-    # If not, the input is disabled with an accessible plain-language message.
-
-    def _has_indexed_chunks() -> bool:
-        try:
-            cur = page.db_connection.cursor()
-            cur.execute(
-                "SELECT 1 FROM document_chunks WHERE patient_id=? LIMIT 1",
-                (patient_id,),
-            )
-            return cur.fetchone() is not None
-        except Exception:
-            return False
-
-    ai_question = ft.TextField(
-        label="Ask a question about your documents",
-        hint_text="e.g. What medications am I currently taking?",
-        multiline=False,
-        expand=True,
-    )
-    ai_response = ft.Text(
-        "",
-        selectable=True,
-        size=pt_scale(page, 13),
-    )
-    ai_citations = ft.Column([], spacing=2)
-
-    _chunks_ready = _has_indexed_chunks()
-
-    if not _chunks_ready:
-        ai_question.disabled = True
-        ai_question.hint_text = (
-            "Document analysis is not ready yet. "
-            "Upload documents and allow the app to process them first."
-        )
-
-    def _handle_ai_query(e: ft.ControlEvent):
-        question = ai_question.value.strip()
-        if not question:
-            return
-        ai_response.value = "Thinking..."
-        ai_citations.controls.clear()
-        try:
-            page.update()
-        except Exception:
-            pass
-
-        try:
-            from ai.query import query_documents
-            result = query_documents(
-                page.db_connection,
-                patient_id,
-                question,
-            )
-            ai_response.value = result.get("response", "")
-            ai_citations.controls = [
-                ft.Text(
-                    f"Source: {c.get('source_file_name', 'unknown')}, "
-                    f"page {c.get('page_number', '?')}",
-                    size=pt_scale(page, 11),
-                    color=ft.Colors.GREY_600,
-                    italic=True,
-                )
-                for c in result.get("citations", [])
-            ]
-        except Exception as ex:
-            ai_response.value = f"Could not complete the query: {ex}"
-
-        try:
-            page.update()
-        except Exception:
-            pass
-
-    ask_btn = ft.ElevatedButton(
-        "Ask",
-        icon=ft.Icons.SEND,
-        disabled=not _chunks_ready,
-        on_click=_handle_ai_query,
-    )
-
-    ai_card = ft.Card(
-        content=ft.Container(
-            padding=pt_scale(page, 16),
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Icon(ft.Icons.AUTO_AWESOME, color=ft.Colors.PURPLE_400),
-                            ft.Text(
-                                "Ask About Your Documents",
-                                weight="bold",
-                                size=pt_scale(page, 15),
-                            ),
-                            ft.Container(
-                                content=ft.Text(
-                                    "AI (Beta)",
-                                    size=pt_scale(page, 10),
-                                    color=ft.Colors.WHITE,
-                                ),
-                                bgcolor=ft.Colors.PURPLE_400,
-                                padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                                border_radius=4,
-                            ),
-                        ],
-                        spacing=8,
-                    ),
-                    ft.Text(
-                        "Ask a plain-language question. Answers come from your uploaded documents only.",
-                        size=pt_scale(page, 12),
-                        color=ft.Colors.GREY_600,
-                    ),
-                    ft.Row(
-                        [
-                            ai_question,
-                            ask_btn,
-                        ],
-                        spacing=8,
-                    ),
-                    ai_response,
-                    ai_citations,
-                ],
-                spacing=10,
-            ),
-        ),
-    )
-
     # 7. INITIAL LAYOUT BUILD
-    refresh_table(update_ui=False)
+    refresh_table(page._doc_search_term, update_ui=False)
 
     return ft.Container(
         padding=pt_scale(page, 20),
@@ -507,8 +382,6 @@ def get_documents_view(page: ft.Page):
                 search_field,
                 ft.Divider(),
                 ft.Column([data_table], scroll=ft.ScrollMode.AUTO, expand=True),
-                ft.Divider(),
-                ai_card,
             ],
             expand=True,
         ),
