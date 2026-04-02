@@ -27,10 +27,10 @@ from core import paths
 
 logger = logging.getLogger(__name__)
 
-_GGUF_FILENAME = "Phi-3-mini-4k-instruct-q4.gguf"
+_GGUF_FILENAME = "Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 _HF_URL = (
-    "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf"
-    "/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
+    "https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF"
+    "/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 )
 _MIN_FREE_BYTES = 3 * 1024 ** 3  # 3 GB
 

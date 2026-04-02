@@ -92,32 +92,50 @@ def apply_suggestion(conn, patient_id: int, s: dict):
                             if v and str(v).lower() != "none" and str(v).strip() != "":
                                 merged[k] = v
                         merged["_ai_source"] = s["source_file_name"]
+                        merged["_source"] = "ai"
+                        merged["_updated"] = now_str
                         current_list[i] = merged
                         updated = True
                         break
                         
         if not updated:
             new_val_obj["_ai_source"] = s["source_file_name"]
+            new_val_obj["_source"] = "ai"
+            new_val_obj["_updated"] = now_str
             current_list.append(new_val_obj)
             
         final_str = json.dumps(current_list)
     else:
         final_str = s["suggested_value"]
         
-    cur.execute(
-        """
-        INSERT INTO patient_field_values 
-        (patient_id, field_key, value_text, source, source_doc_id, ai_confidence, updated_at)
-        VALUES (?, ?, ?, 'ai', ?, ?, ?)
-        ON CONFLICT(patient_id, field_key) DO UPDATE SET
-            value_text=excluded.value_text,
-            source=excluded.source,
-            source_doc_id=excluded.source_doc_id,
-            ai_confidence=excluded.ai_confidence,
-            updated_at=excluded.updated_at
-        """,
-        (patient_id, s["field_key"], final_str, s.get("doc_id"), s["confidence"], now_str) 
-    )
+    if data_type == "json":
+        # For list fields, only update value_text — per-item provenance lives inside the JSON
+        cur.execute(
+            """
+            INSERT INTO patient_field_values 
+            (patient_id, field_key, value_text, source, source_doc_id, ai_confidence, updated_at)
+            VALUES (?, ?, ?, 'ai', ?, ?, ?)
+            ON CONFLICT(patient_id, field_key) DO UPDATE SET
+                value_text=excluded.value_text
+            """,
+            (patient_id, s["field_key"], final_str, s.get("doc_id"), s["confidence"], now_str) 
+        )
+    else:
+        # For scalar fields, update all provenance columns
+        cur.execute(
+            """
+            INSERT INTO patient_field_values 
+            (patient_id, field_key, value_text, source, source_doc_id, ai_confidence, updated_at)
+            VALUES (?, ?, ?, 'ai', ?, ?, ?)
+            ON CONFLICT(patient_id, field_key) DO UPDATE SET
+                value_text=excluded.value_text,
+                source=excluded.source,
+                source_doc_id=excluded.source_doc_id,
+                ai_confidence=excluded.ai_confidence,
+                updated_at=excluded.updated_at
+            """,
+            (patient_id, s["field_key"], final_str, s.get("doc_id"), s["confidence"], now_str) 
+        )
     conn.commit()
 
 def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
@@ -204,6 +222,33 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
                 except Exception:
                     pass
                 return str(raw)
+
+            # Quality warning cards (from ingestion quality flagging)
+            if s.get("field_key") == "system.quality_warning":
+                def dismiss_click(e, sg=s):
+                    mark_suggestion(conn, sg["id"], "dismissed")
+                    refresh_list()
+
+                warning_item = ft.Container(
+                    bgcolor=ft.Colors.AMBER_50,
+                    border=ft.border.all(1, ft.Colors.AMBER_400),
+                    border_radius=8,
+                    padding=10,
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.AMBER_800),
+                            ft.Text("Document Quality Notice", weight="bold", color=ft.Colors.AMBER_900),
+                            ft.Container(expand=True),
+                            ft.Text(f"Source: {s['source_file_name']}", color=ft.Colors.GREY_600, size=pt_scale(page, 12)),
+                        ]),
+                        ft.Text(s["suggested_value"], size=pt_scale(page, 13), color=ft.Colors.AMBER_900),
+                        ft.Row([
+                            ft.TextButton("Dismiss", on_click=dismiss_click),
+                        ], alignment=ft.MainAxisAlignment.END),
+                    ])
+                )
+                list_view.controls.append(warning_item)
+                continue
 
             try:
                 parsed_val = json.loads(s["suggested_value"])

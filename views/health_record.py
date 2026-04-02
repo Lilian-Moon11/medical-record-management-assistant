@@ -131,6 +131,8 @@ class ListRow(ft.Container):
 
         self._item_id = item.get("_id") or str(uuid.uuid4().hex)[:8]
         self.row_id = f"{self.parent_panel.field_key}_{self._item_id}"
+        # Preserve underscore-prefixed metadata from the JSON item
+        self._meta = {k: v for k, v in item.items() if k.startswith("_")}
 
         default_vis = not self.is_section_sensitive
         self.row_revealed = self._page._field_vis.get(self.row_id, default_vis)
@@ -170,15 +172,15 @@ class ListRow(ft.Container):
         else:
             self.eye_btn = None
 
-        # Provenance: show source + updated per row (read-only)
+        # Provenance: show source + updated per row from ITEM-LEVEL metadata
         self._prov_source_text = None
         self._prov_updated_text = None
         if bool(getattr(page, "_show_source", False)):
-            src_val = getattr(self.parent_panel, "_source", "") or "User"
+            src_val = item.get("_source") or getattr(self.parent_panel, "_source", "") or "User"
             self._prov_source_text = ft.Text(src_val, width=pt_scale(page, 80))
             row_controls.append(self._prov_source_text)
         if bool(getattr(page, "_show_updated", False)):
-            upd_val = getattr(self.parent_panel, "_updated_at", "") or "\u2014"
+            upd_val = item.get("_updated") or getattr(self.parent_panel, "_updated_at", "") or "\u2014"
             self._prov_updated_text = ft.Text(upd_val, width=pt_scale(page, 140))
             row_controls.append(self._prov_updated_text)
 
@@ -218,6 +220,8 @@ class ListRow(ft.Container):
             else:
                 d[k] = (ctrl.value or "").strip()
         d["_id"] = self._item_id
+        # Reattach stored metadata (_source, _updated, _ai_source)
+        d.update(self._meta)
         return d
 
     def save_row(self, e):
@@ -346,23 +350,25 @@ class ListEditorBody(ft.Column):
                 for k, _ in self.columns 
                 if k != "is_current"
             )
-            if has_content:
-                cleaned.append(d)
+            if not has_content:
+                continue
+            # Stamp per-item provenance only for the triggering row
+            if triggering_row and rc is triggering_row:
+                from datetime import datetime
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+                d["_source"] = "user"
+                d["_updated"] = now_str
+                # Persist to _meta so future get_data_dict() calls include it
+                rc._meta["_source"] = "user"
+                rc._meta["_updated"] = now_str
+                if rc._prov_updated_text:
+                    rc._prov_updated_text.value = now_str
+                    _safe_update(rc._prov_updated_text)
+                if rc._prov_source_text:
+                    rc._prov_source_text.value = "user"
+                    _safe_update(rc._prov_source_text)
+            cleaned.append(d)
         self.on_save(cleaned)
-
-        # Refresh updated timestamp only for the triggering row
-        from datetime import datetime
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        self._updated_at = now_str
-        self._source = "user"
-        target_rows = [triggering_row] if triggering_row else self.row_components
-        for rc in target_rows:
-            if rc._prov_updated_text:
-                rc._prov_updated_text.value = now_str
-                _safe_update(rc._prov_updated_text)
-            if rc._prov_source_text:
-                rc._prov_source_text.value = "user"
-                _safe_update(rc._prov_source_text)
 
 
 # -----------------------------------------------------------------------------
@@ -483,12 +489,16 @@ class CategoryPanel(ft.Column):
         default_vis = not self.is_section_sensitive
         row_revealed = self._page._field_vis.get(row_id, default_vis)
 
+        can_be_password = self.is_section_sensitive
         value_tf = ft.TextField(
             value=str(val or ""),
-            password=not row_revealed if self.is_section_sensitive else False,
+            password=not row_revealed if can_be_password else False,
             can_reveal_password=False,
             dense=True,
-            width=pt_scale(self._page, 250),
+            width=pt_scale(self._page, 450),
+            multiline=not can_be_password,
+            min_lines=1,
+            max_lines=3 if not can_be_password else 1,
         )
 
         eye_btn = None
@@ -875,7 +885,7 @@ def get_health_record_view(page: ft.Page):
                         ft.Text("Health Record", size=pt_scale(page, 22), weight="bold"),
                         ft.Container(expand=True),
                         ft.FilledTonalButton(
-                            "Edit Security Features",
+                            "Edit Sensitivity",
                             icon=ft.Icons.SHIELD,
                             on_click=lambda _: page.open_bulk_edit_dlg(),
                         ),

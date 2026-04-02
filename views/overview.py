@@ -43,15 +43,63 @@ def get_overview_view(page: ft.Page):
         except Exception as ex:
             show_snack(page, f"Error saving notes: {ex}", "red")
 
-    # Logic: PDF Summary Trigger (2.1)
+
+    if not hasattr(page, "_summary_options_dlg"):
+        from utils.ui_helpers import pt_scale
+        page._summary_opt_ins = ft.Checkbox(label="Insurance Coverage", value=True)
+        page._summary_opt_all = ft.Checkbox(label="Allergies & Alerts", value=True)
+        page._summary_opt_labs = ft.Checkbox(label="Abnormal Labs (All-time)", value=True)
+        page._summary_opt_meds = ft.Checkbox(label="Current Medications", value=True)
+        page._summary_opt_cond = ft.Checkbox(label="Active Conditions", value=True)
+        page._summary_opt_notes = ft.Checkbox(label="General Notes", value=True)
+
+        def _do_export(e):
+            page._summary_options_dlg.open = False
+            page.update()
+            import os
+            try:
+                opts = {
+                    "insurance": page._summary_opt_ins.value,
+                    "allergies": page._summary_opt_all.value,
+                    "labs": page._summary_opt_labs.value,
+                    "meds": page._summary_opt_meds.value,
+                    "conditions": page._summary_opt_cond.value,
+                    "notes": page._summary_opt_notes.value,
+                }
+                path = generate_summary_pdf(page.db_connection, patient[0], options=opts)
+                show_snack(page, "PDF Generated!", "green")
+                os.startfile(path)
+            except Exception as ex:
+                show_snack(page, f"PDF Error: {ex}", "red")
+
+        def _close_dlg(e):
+            page._summary_options_dlg.open = False
+            page.update()
+
+        page._summary_options_dlg = ft.AlertDialog(
+            modal=False,
+            title=ft.Text("Customize Summary", size=pt_scale(page, 18), weight="bold"),
+            content=ft.Column([
+                ft.Text("Select the sections to include in the PDF:", size=pt_scale(page, 14)),
+                page._summary_opt_ins,
+                page._summary_opt_all,
+                page._summary_opt_labs,
+                page._summary_opt_meds,
+                page._summary_opt_cond,
+                page._summary_opt_notes,
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancel", on_click=_close_dlg),
+                ft.FilledButton("Generate PDF", icon=ft.Icons.PICTURE_AS_PDF, on_click=_do_export),
+            ],
+            on_dismiss=_close_dlg,
+        )
+        page.overlay.append(page._summary_options_dlg)
+
     def handle_generate_pdf(e):
-        import os
-        try:
-            path = generate_summary_pdf(page.db_connection, patient[0])
-            show_snack(page, "PDF Generated!", "green")
-            os.startfile(path)
-        except Exception as ex:
-            show_snack(page, f"PDF Error: {ex}", "red")
+        page._summary_options_dlg.open = True
+        page.update()
+
 
     def start_paperwork_wizard(e):
         wizard = PaperworkWizard(page)
@@ -75,170 +123,6 @@ def get_overview_view(page: ft.Page):
                 ft.IconButton(ft.Icons.SAVE, tooltip="Save Notes", on_click=save_notes)
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             notes_input
-        ])
-    )
-
-    # Basic setup for AI Chat Assistant state
-    if not hasattr(page, "_chat_history_state"):
-        page._chat_history_state = []
-    if not hasattr(page, "_chat_is_thinking"):
-        page._chat_is_thinking = False
-    if not hasattr(page, "_chat_input_val"):
-        page._chat_input_val = ""
-
-    chat_list = ft.ListView(
-        spacing=10, 
-        padding=10, 
-        auto_scroll=True, 
-        height=300,
-        width=None,
-    )
-
-    def _has_indexed_chunks() -> bool:
-        try:
-            cur = page.db_connection.cursor()
-            cur.execute(
-                "SELECT 1 FROM document_chunks WHERE patient_id=? LIMIT 1",
-                (patient[0],),
-            )
-            return cur.fetchone() is not None
-        except Exception:
-            return False
-
-    _chunks_ready = _has_indexed_chunks()
-
-    def on_chat_input_change(e):
-        page._chat_input_val = e.control.value
-
-    chat_input = ft.TextField(
-        value=page._chat_input_val,
-        hint_text="Ask about your records..." if _chunks_ready else "Please upload and process documents first.",
-        disabled=not _chunks_ready or page._chat_is_thinking,
-        expand=True,
-        on_change=on_chat_input_change,
-    )
-    
-    chat_submit_btn = ft.IconButton(
-        icon=ft.Icons.SEND,
-        disabled=not _chunks_ready or page._chat_is_thinking,
-    )
-
-    def append_message_ui(role, content, save=True):
-        if save:
-            msg_obj = {"role": role, "text": content}
-            page._chat_history_state.append(msg_obj)
-        else:
-            msg_obj = None
-
-        is_user = role == "user"
-        bg_col = getattr(ft.Colors, "PURPLE_50", ft.Colors.BLUE_50) if is_user else ft.Colors.GREY_100
-        align = ft.MainAxisAlignment.END if is_user else ft.MainAxisAlignment.START
-        
-        msg_text = ft.Text(content, selectable=True, size=pt_scale(page, 13), color=ft.Colors.BLACK87)
-        row = ft.Row([
-            ft.Container(
-                content=msg_text,
-                bgcolor=bg_col,
-                padding=10,
-                border_radius=8,
-                expand=True if not is_user else False,
-            )
-        ], alignment=align)
-        chat_list.controls.append(row)
-        
-        if save and role == "ai":
-            return msg_obj, msg_text
-        return msg_text
-
-    # Rebuild chat UI from history on view load
-    for memory in page._chat_history_state:
-        append_message_ui(memory["role"], memory["text"], save=False)
-
-    def handle_chat_submit(_=None):
-        if not chat_input.value.strip(): return
-        question = chat_input.value.strip()
-        chat_input.value = ""
-        page._chat_input_val = ""
-        
-        chat_input.disabled = True
-        chat_submit_btn.disabled = True
-        page._chat_is_thinking = True
-        page.update()
-
-        append_message_ui("user", question, save=True)
-        
-        # Insert a blank AI message to stream into
-        state_obj, ai_msg_text = append_message_ui("ai", "Thinking... Feel free to navigate to another tab while you wait, this can take some time.", save=True)
-        page.update()
-        
-        def _run_query():
-            try:
-                from ai.query import query_documents_stream
-                ai_msg_text.value = ""
-                state_obj["text"] = ""
-                
-                # Wrap the user question with a system instruction for concise, lookup-style answers
-                lookup_prompt = (
-                    "You are a medical record lookup tool. Answer ONLY with the specific facts requested. "
-                    "Use this format: [Fact Label]: [Value] Ref: [source document name and page].\n"
-                    "Do NOT write paragraphs. Do NOT add disclaimers or commentary. "
-                    "If multiple facts are relevant, list each on its own line.\n\n"
-                    f"Question: {question}"
-                )
-                generator = query_documents_stream(page.db_connection, patient[0], lookup_prompt)
-                
-                citations = []
-                for chunk in generator:
-                    if chunk["type"] == "chunk":
-                        ai_msg_text.value += chunk["text"]
-                        state_obj["text"] = ai_msg_text.value
-                        try:
-                            page.update()
-                        except: pass
-                    elif chunk["type"] == "citations":
-                        citations = chunk["citations"]
-                        
-                if citations:
-                    ai_msg_text.value += "\n\nCitations: " + ", ".join([f"[{c['source_file_name']} (pg {c['page_number']})]" for c in citations])
-                    state_obj["text"] = ai_msg_text.value
-                    try:
-                        page.update()
-                    except: pass
-                    
-            except Exception as e:
-                ai_msg_text.value = f"Error: {e}"
-                state_obj["text"] = ai_msg_text.value
-                try:
-                    page.update()
-                except: pass
-            finally:
-                page._chat_is_thinking = False
-                try:
-                    chat_input.disabled = False
-                    chat_submit_btn.disabled = False
-                    page.update()
-                except: pass
-
-        import threading
-        threading.Thread(target=_run_query, daemon=True).start()
-
-    chat_input.on_submit = handle_chat_submit
-    chat_submit_btn.on_click = handle_chat_submit
-
-    ai_card = themed_panel(
-        page,
-        ft.Column([
-            ft.Row([
-                ft.Icon(ft.Icons.AUTO_AWESOME, color=ft.Colors.PURPLE_400),
-                ft.Text("Assistant", weight="bold", size=pt_scale(page, 18)),
-                ft.Container(expand=True),
-            ]),
-            ft.Container(
-                content=chat_list,
-                border=ft.border.all(1, ft.Colors.GREY_300),
-                border_radius=8,
-            ),
-            ft.Row([chat_input, chat_submit_btn])
         ])
     )
 
@@ -305,8 +189,7 @@ def get_overview_view(page: ft.Page):
                 
                 # Dashboard Content
                 ft.ResponsiveRow([
-                    ft.Column([notes_section], col={"sm": 12, "md": 6}),
-                    ft.Column([ai_card], col={"sm": 12, "md": 6}),
+                    ft.Column([notes_section], col={"sm": 12}),
                 ])
             ],
             scroll=ft.ScrollMode.AUTO

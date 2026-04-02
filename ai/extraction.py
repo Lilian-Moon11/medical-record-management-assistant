@@ -59,11 +59,11 @@ Return ONLY a valid JSON array. Each item must have:
   - "confidence": float 0.0-1.0
 
 Known keys:
-patient.name, patient.phone, patient.email, patient.address, allergyintolerance.list, medicationstatement.current_list, insurance.list, procedures.list, conditions.list
+patient.name, patient.phone, patient.email, patient.address (include street, apt/unit if present, city, state, zip), allergyintolerance.list, medicationstatement.current_list, insurance.list, procedures.list, conditions.list
 
 EXAMPLE OUTPUT FORMAT:
 [
-  {{"field_key": "patient.address", "value": "123 Main St", "confidence": 0.9}},
+  {{"field_key": "patient.address", "value": "1210 Cullen Dr, Apt 4B, Forks, WA 98331", "confidence": 0.9}},
   {{"field_key": "allergyintolerance.list", "value": {{"substance": "Penicillin", "reaction": "Hives", "severity": "High"}}, "confidence": 0.9}},
   {{"field_key": "medicationstatement.current_list", "value": {{"name": "Lisinopril", "dose": "10mg", "frequency": "Daily"}}, "confidence": 0.95}}
 ]

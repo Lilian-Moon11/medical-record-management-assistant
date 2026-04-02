@@ -10,7 +10,7 @@
 # Medical Summary PDF generator.
 #
 # This module compiles key patient information into a clinician-friendly,
-# printable PDF summary built from the app’s Phase 1 (FHIR-lite) data model.
+# printable PDF summary built from the appâ€™s Phase 1 (FHIR-lite) data model.
 #
 # Responsibilities include:
 # - Reading patient demographics and free-text notes from the patient profile
@@ -50,7 +50,8 @@ class MedicalSummaryPDF(FPDF):
         self.set_font("helvetica", "I", 8)
         self.cell(0, 10, f"Page {self.page_no()}", align="C")
 
-def generate_summary_pdf(db_conn, patient_id):
+def generate_summary_pdf(db_conn, patient_id, options=None):
+    options = options or {}
     # 1. Fetch data from your Phase 1 model
     profile = get_profile(db_conn) # (id, name, dob, notes)
     field_map = get_patient_field_map(db_conn, patient_id) #
@@ -78,7 +79,7 @@ def generate_summary_pdf(db_conn, patient_id):
     # 3. Insurance (Conditional)
     raw_ins = (field_map.get("insurance.list", {}) or {}).get("value")
     insurance = json.loads(raw_ins or "[]")
-    if any(i.get("payer") for i in insurance): # Only show if data is typed
+    if options.get('insurance', True) and any(i.get("payer") for i in insurance): # Only show if data is typed
         pdf.set_font("helvetica", "B", 12)
         pdf.set_fill_color(230, 240, 255) # Light Blue header
         pdf.cell(0, 8, " Insurance Coverage", ln=True, fill=True)
@@ -91,7 +92,7 @@ def generate_summary_pdf(db_conn, patient_id):
     # 4. Critical Alerts: Allergies (Red Box)
     raw_allergies = (field_map.get("allergyintolerance.list", {}) or {}).get("value")
     allergies = json.loads(raw_allergies or "[]")
-    if allergies:
+    if options.get('allergies', True) and allergies:
         pdf.set_fill_color(255, 200, 200) # Safety Red
         pdf.set_text_color(150, 0, 0)
         pdf.set_font("helvetica", "B", 12)
@@ -103,7 +104,7 @@ def generate_summary_pdf(db_conn, patient_id):
         pdf.ln(5)
 
     # 5. Abnormal Labs (Filtering)
-    reports = list_lab_reports(db_conn, patient_id, limit=10) #
+    reports = list_lab_reports(db_conn, patient_id, limit=10) if options.get('labs', True) else [] #
     abnormal_results = []
     for r in reports:
         res_list = list_lab_results_for_report(db_conn, patient_id, r[0]) #
@@ -125,7 +126,7 @@ def generate_summary_pdf(db_conn, patient_id):
         raw = (field_map.get(key, {}) or {}).get("value")
         items = json.loads(raw or "[]")
         if filter_current:
-            items = [i for i in items if i.get("is_current", True)] #
+            items = [i for i in items if bool(i.get("is_current", False))]
         
         if not items: return
 
@@ -147,15 +148,18 @@ def generate_summary_pdf(db_conn, patient_id):
             pdf.ln()
         pdf.ln(5)
 
-    draw_section_table("Current Medications", "medicationstatement.current_list", 
+    if options.get('meds', True):
+        draw_section_table("Current Medications", "medicationstatement.current_list", 
                        [("name", "Name"), ("dose", "Dose"), ("frequency", "Frequency")], filter_current=True)
     
-    draw_section_table("Active Conditions", "conditions.list", 
+    if options.get('conditions', True):
+        draw_section_table("Active Conditions", "conditions.list", 
                        [("name", "Condition"), ("onset_date", "Onset Date"), ("symptoms", "Symptoms")])
 
     # 7. Final Output
     pdf.set_font("helvetica", "I", 10)
-    pdf.multi_cell(0, 8, f"General Notes: {profile[3] or ''}")
+    if options.get('notes', True):
+        pdf.multi_cell(0, 8, f"General Notes: {profile[3] or ''}")
     
     filename = f"Medical_Summary_{patient_id}.pdf"
     pdf.output(filename)

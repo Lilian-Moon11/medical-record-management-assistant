@@ -11,5 +11,4 @@
 #   ai.backend        — tiered LLM (Ollama-first, llama-cpp fallback)
 #   ai.model_manager  — GGUF model check + download
 #   ai.ingestion      — background document ingestion pipeline
-#   ai.query          — citation query engine over document_chunks
 #   ai.extraction     — structured field extraction + conflict detection

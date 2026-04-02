@@ -32,8 +32,6 @@ from ai.extraction import extract_fields
 
 logger = logging.getLogger(__name__)
 
-_CHUNK_SIZE = 512    # approximate tokens (chars / 4)
-_CHUNK_OVERLAP = 64  # overlap to preserve context across boundaries
 
 
 # ---------------------------------------------------------------------------
@@ -44,41 +42,132 @@ def _now_ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str]]:
+def _table_to_markdown(table: list[list]) -> str:
+    """Convert a pdfplumber table (list of rows, each a list of cell strings) to Markdown."""
+    if not table or not table[0]:
+        return ""
+    # Clean cells: replace None with empty string
+    clean = [[str(cell).strip() if cell else "" for cell in row] for row in table]
+
+    header = clean[0]
+    md = "| " + " | ".join(header) + " |\n"
+    md += "| " + " | ".join("---" for _ in header) + " |\n"
+    for row in clean[1:]:
+        # Pad short rows to match header length
+        padded = row + [""] * (len(header) - len(row))
+        md += "| " + " | ".join(padded[:len(header)]) + " |\n"
+    return md
+
+
+def _detect_quality_flags(words: list[dict], page_width: float, text: str) -> list[str]:
+    """
+    Analyze page layout and return quality warning strings.
+    - Multi-column detection (text clusters in distinct horizontal bands)
+    - Low-text detection (likely a scanned page inside a digital PDF)
+    - Empty page detection
+    """
+    flags = []
+
+    if not text.strip():
+        flags.append("empty_page")
+        return flags
+
+    if len(text.strip()) < 50:
+        flags.append("low_text")
+        return flags
+
+    # Multi-column detection: if words span wide with a gap in the middle
+    if words and page_width > 0:
+        x_positions = sorted(set(int(w.get("x0", 0)) for w in words))
+        if len(x_positions) > 10:
+            # Check for a horizontal gap in the middle third of the page
+            mid_start = page_width * 0.35
+            mid_end = page_width * 0.65
+            words_in_mid = [x for x in x_positions if mid_start <= x <= mid_end]
+            words_left = [x for x in x_positions if x < mid_start]
+            words_right = [x for x in x_positions if x > mid_end]
+            # If significant text lives on both sides but not the middle, likely multi-column
+            if words_left and words_right and len(words_in_mid) < len(x_positions) * 0.15:
+                flags.append("multi_column")
+
+    return flags
+
+
+def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str, list[str]]]:
     """
     Extract text from decrypted file bytes.
-    Returns list of (page_number, text) tuples (1-indexed pages).
+    Returns list of (page_number, text, quality_flags) tuples (1-indexed pages).
+
+    quality_flags is a list of strings:
+      - "empty_page": page had no extractable text
+      - "low_text": very little text found (likely a scanned page in a digital PDF)
+      - "multi_column": potential multi-column layout detected
+      - "tables_found": structured tables were extracted as Markdown
 
     Fallback chain:
       0. Plain text file (.txt) — returned directly
-      1. PDF with embedded text (pypdf)
-      2. Scanned PDF (pdf2image + rapidocr)
-      3. Image file (rapidocr directly)
+      1. Digital PDF with tables/text (pdfplumber)
+      2. Scanned PDF (pdf2image + RapidOCR)
+      3. Image file (RapidOCR directly)
     """
     name_lower = file_name.lower()
 
     # Plain text passthrough (no PDF/OCR needed)
     if name_lower.endswith(".txt"):
         try:
-            return [(1, file_bytes.decode("utf-8", errors="replace"))]
+            return [(1, file_bytes.decode("utf-8", errors="replace"), [])]
         except Exception:
             return []
 
     if name_lower.endswith(".pdf"):
-        # Try embedded text first (fast, lossless)
+        # Try pdfplumber first (structured extraction with table support)
         try:
             import io
-            from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(file_bytes))
+            import pdfplumber
+
+            pdf = pdfplumber.open(io.BytesIO(file_bytes))
             pages = []
-            for i, page in enumerate(reader.pages, start=1):
-                text = page.extract_text() or ""
-                pages.append((i, text))
-            # If we got meaningful text, use it
-            if any(t.strip() for _, t in pages):
+            has_meaningful_text = False
+
+            for i, pg in enumerate(pdf.pages, start=1):
+                parts = []
+                flags = []
+
+                # Extract tables as Markdown
+                tables = pg.extract_tables()
+                if tables:
+                    flags.append("tables_found")
+                    for table in tables:
+                        md = _table_to_markdown(table)
+                        if md.strip():
+                            parts.append(md)
+
+                # Extract non-table text
+                text = pg.extract_text() or ""
+                if text.strip():
+                    parts.append(text)
+
+                page_text = "\n\n".join(parts)
+
+                # Quality flagging
+                try:
+                    words = pg.extract_words() or []
+                except Exception:
+                    words = []
+                quality_flags = _detect_quality_flags(words, pg.width, page_text)
+                flags.extend(quality_flags)
+
+                if page_text.strip():
+                    has_meaningful_text = True
+
+                pages.append((i, page_text, flags))
+
+            pdf.close()
+
+            if has_meaningful_text:
                 return pages
         except Exception as exc:
-            logger.debug("pypdf extraction failed: %s", exc)
+            logger.debug("pdfplumber extraction failed: %s", exc)
 
         # Scanned PDF: rasterise then OCR
         try:
@@ -91,7 +180,7 @@ def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str]]:
             for i, img in enumerate(images, start=1):
                 result, _ = ocr(img)
                 text = "\n".join(r[1] for r in result) if result else ""
-                pages.append((i, text))
+                pages.append((i, text, []))
             return pages
         except Exception as exc:
             logger.warning("Scanned PDF OCR failed: %s", exc)
@@ -107,7 +196,7 @@ def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str]]:
             img = Image.open(io.BytesIO(file_bytes))
             result, _ = ocr(img)
             text = "\n".join(r[1] for r in result) if result else ""
-            return [(1, text)]
+            return [(1, text, [])]
         except Exception as exc:
             logger.warning("Image OCR failed: %s", exc)
             return []
@@ -116,20 +205,9 @@ def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str]]:
     return []
 
 
-def _chunk_text(text: str, chunk_size: int = _CHUNK_SIZE,
-                overlap: int = _CHUNK_OVERLAP) -> list[str]:
-    """Split text into fixed-size character chunks with overlap."""
-    step = max(chunk_size - overlap, 1)
-    chunks = []
-    i = 0
-    while i < len(text):
-        chunks.append(text[i : i + chunk_size])
-        i += step
-    return chunks
-
 
 def _get_unindexed_docs(conn, patient_id: int) -> list[dict]:
-    """Return documents that have no rows in document_chunks yet."""
+    """Return documents that have no rows in ai_extraction_inbox yet."""
     cur = conn.cursor()
     cur.execute(
         """
@@ -137,7 +215,7 @@ def _get_unindexed_docs(conn, patient_id: int) -> list[dict]:
         FROM documents d
         WHERE d.patient_id = ?
           AND NOT EXISTS (
-              SELECT 1 FROM document_chunks c WHERE c.doc_id = d.id
+              SELECT 1 FROM ai_extraction_inbox c WHERE c.doc_id = d.id
           )
         """,
         (patient_id,),
@@ -145,25 +223,6 @@ def _get_unindexed_docs(conn, patient_id: int) -> list[dict]:
     cols = [desc[0] for desc in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
-
-def _insert_chunks(conn, doc_id: int, patient_id: int,
-                   page_number: int, source_file_name: str,
-                   chunks: list[str]) -> None:
-    cur = conn.cursor()
-    now = _now_ts()
-    cur.executemany(
-        """
-        INSERT INTO document_chunks
-            (doc_id, patient_id, page_number, source_file_name,
-             chunk_text, chunk_index, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            (doc_id, patient_id, page_number, source_file_name, chunk, idx, now)
-            for idx, chunk in enumerate(chunks)
-        ],
-    )
-    conn.commit()
 
 
 def _insert_suggestions(conn, patient_id: int, doc_id: int, suggestions: list[dict]) -> None:
@@ -219,6 +278,20 @@ def run_ingestion(
     import os
 
     fmk = get_or_create_file_master_key(conn, dmk_raw=dmk_raw)
+
+    # Purge orphaned chunks/suggestions from deleted documents
+    cur = conn.cursor()
+
+    cur.execute("""
+        DELETE FROM ai_extraction_inbox
+        WHERE doc_id IS NOT NULL
+          AND doc_id NOT IN (SELECT id FROM documents)
+    """)
+    orphaned = cur.rowcount
+    conn.commit()
+    if orphaned:
+        logger.info("Cleaned up orphaned AI data from deleted documents")
+
     docs = _get_unindexed_docs(conn, patient_id)
     total = len(docs)
 
@@ -258,17 +331,52 @@ def run_ingestion(
         pages = _extract_text(plaintext, file_name)
 
         full_text_parts = []
-        for page_num, page_text in pages:
+        doc_quality_flags = set()
+        for page_num, page_text, quality_flags in pages:
             if stop_event and stop_event.is_set():
                 break
             full_text_parts.append(page_text)
-            chunks = _chunk_text(page_text)
-            if chunks:
-                _insert_chunks(conn, doc["id"], patient_id,
-                               page_num, file_name, chunks)
+            doc_quality_flags.update(quality_flags)
+
 
         if not (stop_event and stop_event.is_set()):
             full_text = "\n".join(full_text_parts)
+
+            # Insert quality warnings as special inbox entries so users see them
+            _quality_warnings = []
+            if "multi_column" in doc_quality_flags:
+                _quality_warnings.append({
+                    "field_key": "system.quality_warning",
+                    "value": "This document may have a multi-column layout. "
+                             "Some data might be out of order. Please verify the extracted information below.",
+                    "confidence": 0.0,
+                    "source_file_name": file_name,
+                    "conflict": False,
+                    "existing_value": None,
+                })
+            if "low_text" in doc_quality_flags:
+                _quality_warnings.append({
+                    "field_key": "system.quality_warning",
+                    "value": "Some pages in this document appear to be scanned. "
+                             "The AI extracted what it could — please verify nothing was missed.",
+                    "confidence": 0.0,
+                    "source_file_name": file_name,
+                    "conflict": False,
+                    "existing_value": None,
+                })
+            if "empty_page" in doc_quality_flags and not full_text.strip():
+                _quality_warnings.append({
+                    "field_key": "system.quality_warning",
+                    "value": "This document couldn't be read automatically. "
+                             "You may need to add this information manually from the Documents tab.",
+                    "confidence": 0.0,
+                    "source_file_name": file_name,
+                    "conflict": False,
+                    "existing_value": None,
+                })
+            if _quality_warnings:
+                _insert_suggestions(conn, patient_id, doc["id"], _quality_warnings)
+
             if full_text.strip():
                 try:
                     suggestions = extract_fields(

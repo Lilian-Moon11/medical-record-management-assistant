@@ -24,8 +24,8 @@ from core import paths
 logger = logging.getLogger(__name__)
 
 _OLLAMA_URL = "http://localhost:11434"
-_OLLAMA_MODEL = "phi3"
-_GGUF_FILENAME = "Phi-3-mini-4k-instruct-q4.gguf"
+_OLLAMA_MODEL = "qwen2.5:3b"
+_GGUF_FILENAME = "Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 
 
 def _ollama_is_running() -> bool:
@@ -43,8 +43,8 @@ def get_llm():
     Return an llama-index-compatible LLM object.
 
     Priority:
-      1. Ollama running locally (phi3)
-      2. llama-cpp-python GGUF (Phi-3-mini-4k-instruct-q4.gguf)
+      1. Ollama running locally (qwen2.5:3b)
+      2. llama-cpp-python GGUF (Qwen2.5-3B-Instruct-Q4_K_M.gguf)
 
     Raises RuntimeError if neither is available.
     """
@@ -60,8 +60,8 @@ def get_llm():
         return LlamaCPP(
             model_path=str(model_path),
             temperature=0.1,
-            max_new_tokens=512,
-            context_window=4096,
+            max_new_tokens=256,
+            context_window=8192,
             verbose=False,
         )
 
