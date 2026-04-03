@@ -177,7 +177,55 @@ class ListRow(ft.Container):
         self._prov_updated_text = None
         if bool(getattr(page, "_show_source", False)):
             src_val = item.get("_source") or getattr(self.parent_panel, "_source", "") or "User"
-            self._prov_source_text = ft.Text(src_val, width=pt_scale(page, 80))
+            
+            if str(src_val).lower() == "ai" and item.get("_ai_source"):
+                ai_filename = item.get("_ai_source")
+                
+                def _open_ai_doc(e, fname=ai_filename):
+                    import asyncio
+                    import os
+                    import tempfile
+                    from datetime import datetime
+                    from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
+                    try:
+                        cur = page.db_connection.cursor()
+                        cur.execute("SELECT file_path FROM documents WHERE patient_id=? AND file_name=? ORDER BY id DESC LIMIT 1", (self.parent_panel.patient_id, fname))
+                        row = cur.fetchone()
+                        if not row or not row[0] or not os.path.exists(row[0]):
+                            show_snack(page, "Original file not found.", "red")
+                            return
+                        enc_path = row[0]
+                        fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
+                        with open(enc_path, "rb") as f:
+                            ciphertext = f.read()
+                        plaintext = decrypt_bytes(fmk, ciphertext)
+                        
+                        _, file_ext = os.path.splitext(fname)
+                        if not file_ext: file_ext = ".pdf"
+                        
+                        tmp_dir = tempfile.gettempdir()
+                        tmp_path = os.path.join(tmp_dir, f"lpa_decrypted_{self.parent_panel.patient_id}_{int(datetime.now().timestamp())}{file_ext}")
+                        with open(tmp_path, "wb") as f:
+                            f.write(plaintext)
+                        
+                        import os
+                        os.startfile(tmp_path)
+                        show_snack(page, f"Opened {fname}", "blue")
+                    except Exception as ex:
+                        show_snack(page, f"Failed to open source document: {ex}", "red")
+
+                self._prov_source_text = ft.TextButton(
+                    str(ai_filename),
+                    on_click=_open_ai_doc,
+                    tooltip="Open source document",
+                    style=ft.ButtonStyle(
+                        color=ft.Colors.BLUE,
+                        padding=0,
+                    ),
+                    width=pt_scale(page, 120),
+                )
+            else:
+                self._prov_source_text = ft.Text(src_val, width=pt_scale(page, 120))
             row_controls.append(self._prov_source_text)
         if bool(getattr(page, "_show_updated", False)):
             upd_val = item.get("_updated") or getattr(self.parent_panel, "_updated_at", "") or "\u2014"
@@ -301,7 +349,7 @@ class ListEditorBody(ft.Column):
         if _ss or _su:
             header_labels: List[Any] = []
             if _ss:
-                header_labels.append(ft.Text("Source", size=pt_scale(page, 12), weight="bold", width=pt_scale(page, 80)))
+                header_labels.append(ft.Text("Source", size=pt_scale(page, 12), weight="bold", width=pt_scale(page, 120)))
             if _su:
                 header_labels.append(ft.Text("Updated", size=pt_scale(page, 12), weight="bold", width=pt_scale(page, 140)))
             # Spacer to align with action buttons
@@ -885,7 +933,7 @@ def get_health_record_view(page: ft.Page):
                         ft.Text("Health Record", size=pt_scale(page, 22), weight="bold"),
                         ft.Container(expand=True),
                         ft.FilledTonalButton(
-                            "Edit Sensitivity",
+                            "Edit Visibility",
                             icon=ft.Icons.SHIELD,
                             on_click=lambda _: page.open_bulk_edit_dlg(),
                         ),

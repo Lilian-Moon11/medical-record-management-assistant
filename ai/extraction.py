@@ -64,8 +64,8 @@ patient.name, patient.phone, patient.email, patient.address (include street, apt
 EXAMPLE OUTPUT FORMAT:
 [
   {{"field_key": "patient.address", "value": "1210 Cullen Dr, Apt 4B, Forks, WA 98331", "confidence": 0.9}},
-  {{"field_key": "allergyintolerance.list", "value": {{"substance": "Penicillin", "reaction": "Hives", "severity": "High"}}, "confidence": 0.9}},
-  {{"field_key": "medicationstatement.current_list", "value": {{"name": "Lisinopril", "dose": "10mg", "frequency": "Daily"}}, "confidence": 0.95}}
+  {{"field_key": "allergyintolerance.list", "value": {{"substance": "Kryptonite", "reaction": "Weakness", "severity": "High"}}, "confidence": 0.9}},
+  {{"field_key": "medicationstatement.current_list", "value": {{"name": "Felix Felicis", "dose": "1 vial", "frequency": "Daily"}}, "confidence": 0.95}}
 ]
 
 Document:
@@ -181,15 +181,30 @@ def extract_fields(
         if not field_key or not value:
             continue
 
-        # Skip list items where all meaningful fields are empty/none
+        # Skip generic scalars that are blank form lines or placeholders
+        _lower_val = value.lower()
+        if set(value) <= {"_", "-"} or _lower_val in ("none", "null", "n/a", "unknown"):
+            continue
+            
+        if "___" in value or "---" in value:
+            continue
+            
+        # Hard-block AI hallucinating the exact few-shot prompt examples
+        if "1210 cullen" in _lower_val or "kryptonite" in _lower_val or "felix felicis" in _lower_val:
+            continue
+
+        # Skip list items where all meaningful fields are empty/none/blank lines
         # (LLM sometimes outputs placeholder objects with no real data)
         if ".list" in field_key or "_list" in field_key:
             try:
                 val_obj = json.loads(value)
                 if isinstance(val_obj, dict):
-                    meaningful = {k: v for k, v in val_obj.items()
-                                  if v and str(v).strip() and str(v).lower() != "none"
-                                  and not k.startswith("_")}
+                    meaningful = {}
+                    for k, v in val_obj.items():
+                        v_str = str(v).strip()
+                        if v_str and v_str.lower() not in ("none", "null", "n/a", "unknown") and not k.startswith("_"):
+                            if not set(v_str) <= {"_", "-"}:
+                                meaningful[k] = v
                     if not meaningful:
                         continue
             except (json.JSONDecodeError, TypeError):

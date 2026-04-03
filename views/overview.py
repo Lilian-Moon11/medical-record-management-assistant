@@ -45,7 +45,6 @@ def get_overview_view(page: ft.Page):
 
 
     if not hasattr(page, "_summary_options_dlg"):
-        from utils.ui_helpers import pt_scale
         page._summary_opt_ins = ft.Checkbox(label="Insurance Coverage", value=True)
         page._summary_opt_all = ft.Checkbox(label="Allergies & Alerts", value=True)
         page._summary_opt_labs = ft.Checkbox(label="Abnormal Labs (All-time)", value=True)

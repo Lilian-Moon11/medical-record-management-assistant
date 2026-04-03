@@ -378,6 +378,37 @@ def run_ingestion(
                 _insert_suggestions(conn, patient_id, doc["id"], _quality_warnings)
 
             if full_text.strip():
+                # Extract Document Metadata (Visit Date & Specialty) using AI
+                try:
+                    doc_meta_prompt = f"""
+From the following document text, what is the single primary visit date (the FIRST listed visit date) and the primary medical specialty/clinic name?
+All dates MUST be formatted using the ISO 8601 international standard (YYYY-MM-DD).
+Return ONLY a valid JSON object exactly like this:
+{{"visit_date": "YYYY-MM-DD", "specialty": "Specialty Name"}}
+If not found, use null.
+
+Document:
+{full_text[:3000]}
+"""
+                    from ai.backend import get_llm
+                    import json
+                    import re
+                    llm = get_llm()
+                    raw = llm.complete(doc_meta_prompt).text
+                    match = re.search(r"\{.*\}", str(raw).strip(), flags=re.DOTALL)
+                    if match:
+                        meta = json.loads(match.group(0))
+                        vd = str(meta.get("visit_date", "")).strip()
+                        sp = str(meta.get("specialty", "")).strip()
+                        if vd.lower() in ("unknown", "none", "null", ""): vd = None
+                        if sp.lower() in ("unknown", "none", "null", ""): sp = None
+                        
+                        c = conn.cursor()
+                        c.execute("UPDATE documents SET visit_date = ?, specialty = ? WHERE id = ?", (vd, sp, doc["id"]))
+                        conn.commit()
+                except Exception as meta_ex:
+                    logger.warning("Document metadata extraction failed for doc %d: %s", doc["id"], meta_ex)
+
                 try:
                     suggestions = extract_fields(
                         conn, 

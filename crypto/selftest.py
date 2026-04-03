@@ -122,7 +122,7 @@ def run_crypto_self_test(
             patient_id = p[0]
             docs = get_patient_documents(conn, patient_id)
             if docs:
-                _doc_id, _name, _date, enc_path = docs[0]
+                enc_path = docs[0][3]
                 if enc_path and os.path.exists(enc_path):
                     with open(enc_path, "rb") as f:
                         blob = f.read()

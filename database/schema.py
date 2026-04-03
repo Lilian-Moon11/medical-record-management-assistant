@@ -74,6 +74,8 @@ def _ensure_schema(conn):
     for col_sql in (
         "ALTER TABLE patient_field_values ADD COLUMN source_doc_id INTEGER",
         "ALTER TABLE patient_field_values ADD COLUMN ai_confidence REAL",
+        "ALTER TABLE documents ADD COLUMN visit_date TEXT",
+        "ALTER TABLE documents ADD COLUMN specialty TEXT",
     ):
         try:
             cur.execute(col_sql)

@@ -41,8 +41,28 @@ from core import paths  # noqa: F401 — bootstraps app directories on import
 from core import app_state
 from ui import routing, navigation, dialogs, login
 
+import os
+import glob
+import tempfile
+
+def cleanup_decrypted_temp_files():
+    try:
+        tmp_dir = tempfile.gettempdir()
+        pattern = os.path.join(tmp_dir, "lpa_decrypted_*.*")
+        for f in glob.glob(pattern):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    except Exception:
+        pass
 
 def main(page: ft.Page):
+    # Aggressively wipe legacy temporary files on boot
+    cleanup_decrypted_temp_files()
+    
+    # Also wipe them when the user exits the app
+    page.on_disconnect = lambda e: cleanup_decrypted_temp_files()
     # --- window / shell ---
     page.title = "Local Patient Advocate"
     page.window.width = 1000
@@ -63,6 +83,7 @@ def main(page: ft.Page):
         routing.apply_settings(page, get_view_for_index=get_view_for_index)
 
     get_view_for_index = routing.make_get_view_for_index(page, apply_settings_callback=apply_settings_callback)
+    page._get_view_for_index = get_view_for_index
 
     # --- dialogs (register once; safe to call multiple times) ---
     dialogs.ensure_dialogs_registered(page, s=pt_scale, show_snack=show_snack)

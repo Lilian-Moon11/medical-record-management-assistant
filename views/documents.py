@@ -133,12 +133,31 @@ def get_documents_view(page: ft.Page):
 
     all_docs = []
 
-    # 2. CONTROLS
+    # 2. FILE SAVING & CONTROLS
+    sort_column = 2
+    sort_ascending = False
+
+    def sort_table(e: ft.DataColumnSortEvent):
+        nonlocal sort_column, sort_ascending
+        if sort_column == e.column_index:
+            sort_ascending = not sort_ascending
+        else:
+            sort_column = e.column_index
+            sort_ascending = True
+
+        data_table.sort_column_index = sort_column
+        data_table.sort_ascending = sort_ascending
+        refresh_table(search_field.value, update_ui=True)
+
     data_table = ft.DataTable(
+        sort_column_index=sort_column,
+        sort_ascending=sort_ascending,
         columns=[
             ft.DataColumn(ft.Text("Type")),
             ft.DataColumn(ft.Text("File Name")),
-            ft.DataColumn(ft.Text("Date Added")),
+            ft.DataColumn(ft.Text("Upload Date"), on_sort=sort_table),
+            ft.DataColumn(ft.Text("Visit Date"), on_sort=sort_table),
+            ft.DataColumn(ft.Text("Specialty"), on_sort=sort_table),
             ft.DataColumn(ft.Text("Open")),
             ft.DataColumn(ft.Text("Delete")),
         ],
@@ -175,15 +194,15 @@ def get_documents_view(page: ft.Page):
                 ciphertext = f.read()
             plaintext = decrypt_bytes(fmk, ciphertext)
 
-            # Write temp PDF
-            safe_name = human_name if human_name.lower().endswith(".pdf") else f"{human_name}.pdf"
+            # Write temp file with original extension
+            _, file_ext = os.path.splitext(human_name)
+            if not file_ext: file_ext = ".pdf"
             tmp_dir = tempfile.gettempdir()
-            tmp_path = os.path.join(tmp_dir, f"lpa_decrypted_{patient_id}_{int(datetime.now().timestamp())}.pdf")
+            tmp_path = os.path.join(tmp_dir, f"lpa_decrypted_{patient_id}_{int(datetime.now().timestamp())}{file_ext}")
             with open(tmp_path, "wb") as f:
                 f.write(plaintext)
 
-            file_url = "file:///" + tmp_path.replace("\\", "/")
-            await ft.UrlLauncher().launch_url(file_url)
+            os.startfile(tmp_path)
 
             show_snack(page, "Opened a temporary decrypted copy (will be cleaned up later).", "orange")
         except Exception as ex:
@@ -222,7 +241,7 @@ def get_documents_view(page: ft.Page):
         page.update()
 
     def refresh_table(filter_text: str = "", update_ui: bool = False):
-        nonlocal all_docs
+        nonlocal all_docs, sort_column, sort_ascending
         rows: list[ft.DataRow] = []
         ft_filter = (filter_text or "").lower()
 
@@ -231,11 +250,25 @@ def get_documents_view(page: ft.Page):
         except Exception:
             all_docs = []
 
+        # Sort all_docs based on selected column
+        def sort_key(doc):
+            idx_map = {2: 2, 3: 4, 4: 5} # Column index to tuple index: 2=Upload Date, 3=Visit Date, 4=Specialty
+            val = doc[idx_map.get(sort_column, 2)]
+            return str(val).lower() if val else ""
+            
+        all_docs.sort(key=sort_key, reverse=not sort_ascending)
+
         for doc in all_docs:
             try:
-                doc_id, file_name, upload_date, file_path = doc
+                # new get_patient_documents return shape unpack
+                doc_id, file_name, upload_date, file_path, visit_date, specialty = doc
             except Exception:
-                continue
+                try:
+                    # fallback if schema missing somehow
+                    doc_id, file_name, upload_date, file_path = doc
+                    visit_date, specialty = None, None
+                except Exception:
+                    continue
 
             if ft_filter and ft_filter not in str(file_name).lower():
                 continue
@@ -246,9 +279,12 @@ def get_documents_view(page: ft.Page):
                         ft.DataCell(ft.Icon(ft.Icons.INSERT_DRIVE_FILE, color="blue")),
                         ft.DataCell(ft.Text(str(file_name))),
                         ft.DataCell(ft.Text(str(upload_date))),
+                        ft.DataCell(ft.Text(str(visit_date) if visit_date else "")),
+                        ft.DataCell(ft.Text(str(specialty) if specialty else "")),
                         ft.DataCell(
                             ft.IconButton(
                                 ft.Icons.OPEN_IN_NEW,
+                                tooltip="Open Temp Decrypted Copy",
                                 data=(file_path, file_name),
                                 on_click=open_doc_click,
                             )
@@ -350,6 +386,16 @@ def get_documents_view(page: ft.Page):
                         str(paths.data_dir),
                     )
                     show_snack(page, "AI Extraction Complete! Check your Dashboard.", "green")
+
+                    # Force refresh the current active view (e.g., Dashboard to show new suggestions)
+                    if hasattr(page, "_get_view_for_index") and getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
+                        try:
+                            idx = page.nav_rail.selected_index
+                            page.content_area.content = page._get_view_for_index(idx)
+                            page.content_area.update()
+                        except Exception as refresh_ex:
+                            print(f"Auto-refresh failed: {refresh_ex}")
+                            
                 except Exception as ex:
                     print(f"Ingestion error: {ex}")
 

@@ -18,7 +18,7 @@
 # - Patient Info management dialogs:
 #   - Delete field definition (with guardrails preventing deletion of core/system keys)
 #   - Add custom field (unique field_key generation + basic data-type detection)
-#   - Bulk Edit Sensitivity switches that toggle section/list sensitivity flags
+#   - Bulk Edit Visibility switches that toggle section/list sensitivity flags
 #     in field_definitions (e.g., section.demographics / section.other).
 # - Account recovery dialogs:
 #   - Forgot-password flow (unlock via recovery key, set new password)
@@ -654,7 +654,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         page.update()
     page._patient_info_dialogs_registered = True
 
-    # --- 3. Bulk Edit Sensitivity Dialog ---
+    # --- 3. Bulk Edit Visibility Dialog ---
     page._bulk_edit_col = ft.Column(scroll=ft.ScrollMode.AUTO, height=400, spacing=4)
     
     def _close_bulk(_e=None):
@@ -695,7 +695,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
     # CREATE THE DIALOG ONCE
     page._bulk_edit_dlg = ft.AlertDialog(
         modal=False,
-        title=ft.Text("Edit Security Features"),
+        title=ft.Text("Edit Visibility"),
         content=ft.Container(width=400, content=page._bulk_edit_col),
         actions=[
             ft.TextButton("Cancel", on_click=_close_bulk),

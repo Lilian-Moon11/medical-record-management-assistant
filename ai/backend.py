@@ -51,7 +51,7 @@ def get_llm():
     if _ollama_is_running():
         logger.info("AI backend: using Ollama (%s)", _OLLAMA_MODEL)
         from llama_index.llms.ollama import Ollama
-        return Ollama(model=_OLLAMA_MODEL, request_timeout=120.0)
+        return Ollama(model=_OLLAMA_MODEL, request_timeout=120.0, temperature=0.0)
 
     model_path = paths.model_dir / _GGUF_FILENAME
     if model_path.exists():
@@ -59,7 +59,7 @@ def get_llm():
         from llama_index.llms.llama_cpp import LlamaCPP
         return LlamaCPP(
             model_path=str(model_path),
-            temperature=0.1,
+            temperature=0.0,
             max_new_tokens=256,
             context_window=8192,
             verbose=False,

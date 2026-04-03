@@ -200,7 +200,7 @@ def list_all_results_for_test(conn, patient_id, test_name):
 # Documents
 def get_patient_documents(conn, patient_id):
     cur = conn.cursor()
-    cur.execute("SELECT id, file_name, upload_date, file_path FROM documents WHERE patient_id = ? ORDER BY id DESC", (patient_id,))
+    cur.execute("SELECT id, file_name, upload_date, file_path, visit_date, specialty FROM documents WHERE patient_id = ? ORDER BY id DESC", (patient_id,))
     return cur.fetchall()
 
 def add_document(conn, patient_id, file_name, file_path, upload_date):
