@@ -60,7 +60,7 @@ def get_llm():
         return LlamaCPP(
             model_path=str(model_path),
             temperature=0.0,
-            max_new_tokens=256,
+            max_new_tokens=1024,
             context_window=8192,
             verbose=False,
         )

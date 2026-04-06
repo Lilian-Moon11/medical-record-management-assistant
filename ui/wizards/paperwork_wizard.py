@@ -32,12 +32,15 @@
 # - Fail safely with clear snackbar messages when inputs or generation fail
 # -----------------------------------------------------------------------------
 
+import asyncio
 import flet as ft
 import flet.canvas as cv
 import os
 from datetime import datetime
 from PyPDFForm import PdfWrapper
 
+from ai.paperwork import map_pdf_fields
+from ai.paperwork_overlay import fill_static_pdf
 from database.clinical import list_providers
 from utils.ui_helpers import pt_scale, show_snack
 from PIL import Image, ImageDraw
@@ -162,7 +165,7 @@ class SignaturePad(ft.GestureDetector):
 
 def render_signature_png(points, width: int, height: int) -> Image.Image:
     """Pure helper: render signature strokes to a PIL Image (easy to unit test)."""
-    img = Image.new("RGB", (width, height), (255, 255, 255))
+    img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
 
     last = None
@@ -171,7 +174,7 @@ def render_signature_png(points, width: int, height: int) -> Image.Image:
             last = None
             continue
         if last is not None:
-            draw.line([last, p], fill=(0, 0, 0), width=4)
+            draw.line([last, p], fill=(0, 0, 0, 255), width=4)
         last = p
 
     return img
@@ -222,13 +225,14 @@ class PaperworkWizard:
             spacing=pt_scale(page, 10) # Scaled spacing
         )
         self.next_btn = ft.FilledButton("Next", on_click=self.next_step)
+        self._cancel_btn = ft.TextButton("Cancel", on_click=self.close)
         self.page.on_keyboard_event = self.on_key_event
 
         self.dlg = ft.AlertDialog(
             title=ft.Text("Complete Paperwork"),
             content=self.content_area,
             actions=[
-                ft.TextButton("Cancel", on_click=self.close),
+                self._cancel_btn,
                 self.next_btn,
             ],
             on_dismiss=self.close,
@@ -238,14 +242,14 @@ class PaperworkWizard:
         if self.dlg not in self.page.overlay:
             self.page.overlay.append(self.dlg)
 
-    def on_key_event(self, e: ft.KeyboardEvent):
+    async def on_key_event(self, e: ft.KeyboardEvent):
         """Triggers next_step when Enter is pressed and the dialog is open."""
         if e.key == "Enter" and self.dlg.open:
             # Accessibility: Prevent generation if they haven't reached the final step
             if self.step < 4:
-                self.next_step()
+                await self.next_step()
             else:
-                self.execute_generation()
+                await self.execute_generation()
     
     # --- FilePicker: match documents.py pattern (inline async pick) ---
     async def pick_template_click(self, e: ft.ControlEvent):
@@ -375,17 +379,29 @@ class PaperworkWizard:
                     ]
                 )
             else:
-                # Non-ROI: ensure Next is enabled, then skip to review
+                # Non-ROI: skip step 2 by directly advancing to step 3.
+                # Cannot call await self.next_step() here because render_step
+                # is a synchronous function. Direct step mutation is safe.
                 self.next_btn.disabled = False
-                self.next_step()
+                self.step = 3
+                self.render_step()
+                return
 
         elif self.step == 3:
-            self.next_btn.disabled = False  # Re-enable after step 2 gate
+            self.next_btn.disabled = False
             self.content_area.controls.append(
-                ft.Text("Step 3: Sign the Authorization", weight="bold", size=header_size)
+                ft.Text("Step 3: Provide Your Signature", weight="bold", size=header_size)
             )
-            # Pass page to sig_pad for scaling
-            self.sig_pad = SignaturePad(self.page) 
+            self.content_area.controls.append(
+                ft.Text(
+                    "Your signature will be applied to the form if it includes a designated "
+                    "signature area. It is not stored by the application and is only used "
+                    "to generate this document.",
+                    size=pt_scale(self.page, 12),
+                    color=ft.Colors.SECONDARY,
+                )
+            )
+            self.sig_pad = SignaturePad(self.page)
             self.content_area.controls.extend([
                 self.sig_pad,
                 ft.TextButton("Clear Signature", on_click=self.sig_pad.clear)
@@ -409,7 +425,7 @@ class PaperworkWizard:
             self.dlg.update()
         self.page.update()
 
-    def next_step(self, e=None):
+    async def next_step(self, e=None):
         if self.step == 1:
             if hasattr(self, "form_radio") and self.form_radio:
                 self.selected_type = self.form_radio.value or self.selected_type
@@ -422,22 +438,22 @@ class PaperworkWizard:
                 return
 
             self.step = 2
-        
+
         elif self.step == 2:
             # Move from details to signature
             self.step = 3
-            
+
         elif self.step == 3:
             # Move from signature to final review
             self.step = 4
 
         elif self.step == 4:
-            self.execute_generation()
+            await self.execute_generation()
             return
 
         self.render_step()
 
-    def execute_generation(self):
+    async def execute_generation(self):
         self.next_btn.disabled = True
         self.next_btn.text = "Generating..."
         self.page.update()
@@ -450,23 +466,260 @@ class PaperworkWizard:
             # Prepare Metadata & Read Template Once
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-            output_path = None 
+            output_path = None
             acc_bytes = None
             flat_bytes = None
-            
+
             # Keep a bytes copy only for schema detection; fill uses file path
             # so PyPDFForm can generate proper appearance streams.
             with open(self.template_path, "rb") as f:
                 template_data = f.read()
 
-            # Dynamic Field Mapping to avoid PyPDFForm key errors
+            # --- 1. Detect all blank fields in the PDF template ---
             pdf_schema = PdfWrapper(template_data).schema
-            pdf_fields = list(pdf_schema.get("properties", {}).keys()) if pdf_schema else []
-            
-            # Debug: print detected fields so the user can verify
+            schema_props = pdf_schema.get("properties", {}) if pdf_schema else {}
+            pdf_fields = list(schema_props.keys())
             print(f"PDF FIELDS DETECTED: {pdf_fields}")
-            
-            # Helper to find the best matching key in the PDF
+
+            # Guard: if the PDF has no AcroForm fields, it is a static/flat PDF.
+            # Show an explanatory dialog and let the user decide whether to
+            # continue (manual fill) or go back and try a fillable version.
+            if not pdf_fields:
+                import asyncio as _asyncio
+                choice_future: _asyncio.Future = _asyncio.get_event_loop().create_future()
+
+                def _on_continue(_e=None):
+                    if not choice_future.done():
+                        choice_future.set_result("continue")
+
+                def _on_cancel(_e=None):
+                    if not choice_future.done():
+                        choice_future.set_result("cancel")
+
+                # Reuse the existing wizard dialog (which we know opens/closes
+                # reliably) by swapping its content to show the warning.
+                self.dlg.title = ft.Row([
+                    ft.Icon(ft.Icons.INFO_OUTLINE, color="orange"),
+                    ft.Text("  Fillable Form Recommended", weight="bold"),
+                ])
+                self.dlg.modal = True
+                self.content_area.controls.clear()
+                self.content_area.controls.extend([
+                    ft.Text(
+                        "This PDF does not have fillable fields. The app can still "
+                        "try to place your information by reading the visible labels, "
+                        "but the result may need manual corrections.",
+                        size=pt_scale(self.page, 13),
+                    ),
+                    ft.Container(
+                        bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.ORANGE),
+                        border_radius=pt_scale(self.page, 6),
+                        padding=ft.padding.all(pt_scale(self.page, 8)),
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color="orange", size=pt_scale(self.page, 16)),
+                            ft.Container(
+                                expand=True,
+                                content=ft.Text(
+                                    "Please review the output carefully before submitting.",
+                                    size=pt_scale(self.page, 12),
+                                    color="orange",
+                                ),
+                            ),
+                        ], spacing=pt_scale(self.page, 6)),
+                    ),
+                    ft.ExpansionTile(
+                        title=ft.Text("What is a fillable PDF?", size=pt_scale(self.page, 12)),
+                        expanded=False,
+                        controls=[
+                            ft.Container(
+                                padding=ft.padding.only(left=pt_scale(self.page, 8), bottom=pt_scale(self.page, 8)),
+                                content=ft.Text(
+                                    "A fillable PDF has embedded form fields that the app "
+                                    "can automatically populate. The file you selected has "
+                                    "blanks drawn as lines or underscores instead, "
+                                    "which makes it harder to process.",
+                                    size=pt_scale(self.page, 11),
+                                    color=ft.Colors.SECONDARY,
+                                ),
+                            ),
+                        ],
+                    ),
+                    ft.ExpansionTile(
+                        title=ft.Text("Where to find a fillable version:", size=pt_scale(self.page, 12)),
+                        expanded=False,
+                        controls=[
+                            ft.Container(
+                                alignment=ft.alignment.Alignment(-1.0, -1.0),
+                                padding=ft.padding.only(left=pt_scale(self.page, 24), bottom=pt_scale(self.page, 8)),
+                                content=ft.Text(
+                                    "\u2022 Check the provider's website or patient portal\n"
+                                    "\u2022 Call the front desk and ask for their \"fillable PDF\"\n"
+                                    "\u2022 Open the form in Adobe Acrobat to see if it has clickable fields",
+                                    size=pt_scale(self.page, 11),
+                                    color=ft.Colors.SECONDARY,
+                                ),
+                            ),
+                        ],
+                    ),
+                ])
+                self.dlg.actions = [
+                    ft.TextButton("Cancel", on_click=_on_cancel),
+                    ft.FilledButton("Continue Anyway", icon=ft.Icons.ARROW_FORWARD, on_click=_on_continue),
+                ]
+                self.dlg.update()
+                self.page.update()
+
+                user_choice = await choice_future
+
+                if user_choice == "cancel":
+                    self.close()
+                    if sig_path and os.path.exists(sig_path):
+                        os.remove(sig_path)
+                    return
+
+                # User chose to continue with static PDF.
+                # Show a non-modal loading dialog the user can dismiss.
+                self.dlg.title = ft.Text("Completing Paperwork")
+                self.dlg.modal = False
+                self.dlg.actions = []
+                self.next_btn.disabled = True
+                self.next_btn.text = "Generating..."
+                self.content_area.controls.clear()
+                self.content_area.controls.extend([
+                    ft.Text(
+                        "Reading form labels and matching your information...",
+                        weight="bold",
+                        size=pt_scale(self.page, 15),
+                    ),
+                    ft.ProgressBar(width=pt_scale(self.page, 440)),
+                    ft.Text(
+                        "This may take a minute. Processing time depends on your computer's capacity because the AI runs entirely locally on your device.",
+                        size=pt_scale(self.page, 12),
+                        color=ft.Colors.SECONDARY,
+                        italic=True,
+                    ),
+                    ft.Container(height=pt_scale(self.page, 6)),
+                    ft.Text(
+                        "You can click away from this and keep using the app. "
+                        "The completed form will appear when ready.",
+                        size=pt_scale(self.page, 12),
+                        color=ft.Colors.PRIMARY,
+                    ),
+                ])
+                self.dlg.open = True
+                self.page.update()
+
+                static_bytes, fill_items = await asyncio.to_thread(
+                    fill_static_pdf,
+                    self.template_path,
+                    self.page.db_connection,
+                    self.patient_id,
+                    sig_path=sig_path,
+                )
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                form_prefix = "Intake" if self.selected_type == "intake" else "ROI"
+
+                if not fill_items:
+                    # Nothing was placed — save the template as a blank draft
+                    # so the user at least has a clean copy to fill manually.
+                    download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+                    static_out = os.path.join(download_dir, f"{form_prefix}_Draft_{timestamp}.pdf")
+                    with open(static_out, "wb") as f:
+                        f.write(static_bytes)
+                    show_snack(self.page, "No fields matched. Blank draft saved to Downloads.", "orange")
+                    if os.name == "nt":
+                        os.startfile(static_out)
+                    self.close()
+                    if sig_path and os.path.exists(sig_path):
+                        os.remove(sig_path)
+                    return
+
+                # Close the loading dialog before opening placement review
+                self.close()
+
+                # execute_generation returns here; all further work happens
+                # inside the on_confirm callback once the user clicks Save Final.
+
+                def _on_placement_confirmed(final_bytes: bytes):
+                    download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+                    static_out = os.path.join(
+                        download_dir, f"{form_prefix}_Draft_{timestamp}.pdf"
+                    )
+                    try:
+                        with open(static_out, "wb") as f:
+                            f.write(final_bytes)
+                    except Exception as write_ex:
+                        show_snack(self.page, f"Save error: {write_ex}", "red")
+                        return
+
+                    if self.save_to_db_check.value:
+                        try:
+                            dest_dir = os.path.join(os.getcwd(), "data", str(self.patient_id))
+                            os.makedirs(dest_dir, exist_ok=True)
+                            display_name = f"{form_prefix}_Draft_{timestamp}.pdf"
+                            enc_path = os.path.join(dest_dir, display_name + ".enc")
+                            fmk = get_or_create_file_master_key(
+                                self.page.db_connection, dmk_raw=self.page.db_key_raw
+                            )
+                            ciphertext = encrypt_bytes(fmk, final_bytes)
+                            with open(enc_path, "wb") as f:
+                                f.write(ciphertext)
+                            add_document(
+                                self.page.db_connection,
+                                self.patient_id,
+                                display_name,
+                                enc_path,
+                                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            )
+                        except Exception as arc_ex:
+                            print(f"Static archive error: {arc_ex}")
+
+                    show_snack(
+                        self.page,
+                        "Draft saved to Downloads. Please review before submitting.",
+                        "orange",
+                    )
+                    if os.name == "nt":
+                        os.startfile(static_out)
+
+                    self.close()
+                    if sig_path and os.path.exists(sig_path):
+                        os.remove(sig_path)
+
+                from ui.wizards.placement_review import open_placement_review
+                open_placement_review(
+                    page=self.page,
+                    merged_pdf_bytes=static_bytes,
+                    fill_items=fill_items,
+                    template_path=self.template_path,
+                    on_confirm=_on_placement_confirmed,
+                )
+                return
+
+
+            # Extract per-field character limits from the PDF's /MaxLen attribute.
+            # PyPDFForm exposes this as 'maxLength' in the schema properties.
+            # Fields without a declared limit are left out (fallback handled in ai/paperwork.py).
+            field_limits = {
+                field: props["maxLength"]
+                for field, props in schema_props.items()
+                if isinstance(props, dict) and isinstance(props.get("maxLength"), int)
+            }
+            if field_limits:
+                print(f"PDF FIELD LIMITS: {field_limits}")
+
+            # Pass the full per-field schema props to ai/paperwork.py so it can
+            # distinguish boolean (checkbox) and enum (radio/select) fields from text.
+            field_schema = {
+                field: props
+                for field, props in schema_props.items()
+                if isinstance(props, dict) and props.get("type") in ("boolean", "string")
+            }
+
+            # --- 2. Build the UI-sourced (hardcoded) mapping first ---
+            # These come directly from Wizard inputs and always take priority.
+            # Helper to find the best matching key in the PDF schema.
             def _find_key(possible_matches, exclude=None):
                 for p in possible_matches:
                     for f in pdf_fields:
@@ -483,13 +736,16 @@ class PaperworkWizard:
                 return None
 
             mapping = {}
-            
+
+            # Fields present in BOTH intake and ROI forms
             name_key = _find_key(["patient name", "Patient Name", "name", "patient"])
-            if name_key: mapping[name_key] = self.patient_name
-            
+            if name_key:
+                mapping[name_key] = self.patient_name
+
             dob_key = _find_key(["birth date", "Birth Date", "dob", "date of birth", "DOB"])
-            if dob_key: mapping[dob_key] = self.page.current_profile[2]
-            
+            if dob_key:
+                mapping[dob_key] = self.page.current_profile[2]
+
             date_key = _find_key(["Date", "date", "Sign Date", "today"], exclude=dob_key)
             if date_key:
                 mapping[date_key] = self.sign_date.value
@@ -498,7 +754,7 @@ class PaperworkWizard:
             if sig_path and sig_key:
                 mapping[sig_key] = sig_path
 
-            # --- Recipient (Send To) provider fields ---
+            # ROI-specific: recipient provider fields selected in the Wizard UI
             if self.selected_type == "roi" and self.prov_to_dropdown.value:
                 to_key = self.prov_to_dropdown.value
                 recip = {"name": "", "address": "", "phone": "", "email": ""}
@@ -515,7 +771,6 @@ class PaperworkWizard:
                         recip["phone"] = prov[4] or ""
                         recip["email"] = prov[6] or ""
 
-                # Map recipient fields to PDF
                 rn_key = _find_key(["Recipient Name", "recipient", "send to"])
                 if rn_key and recip["name"]:
                     mapping[rn_key] = recip["name"]
@@ -528,37 +783,75 @@ class PaperworkWizard:
                 if ph_key and recip["phone"]:
                     mapping[ph_key] = recip["phone"]
 
-                # Use exact match for Email_2 to avoid colliding with patient Email
+                # Exact match for Email_2 to avoid colliding with patient Email field
                 em_key = _find_key(["Email_2"])
                 if em_key and recip["email"]:
                     mapping[em_key] = recip["email"]
 
-            print(f"MAPPING APPLIED: {mapping}")
+                # ROI purpose and expiry
+                purpose_key = _find_key(["purpose", "Purpose", "reason", "Reason"])
+                if purpose_key and hasattr(self, "roi_purpose") and self.roi_purpose.value:
+                    mapping[purpose_key] = self.roi_purpose.value
 
-            # 5. GENERATION LOGIC: Checkboxes
-            
+                expiry_key = _find_key(["expir", "Expir", "expiration", "Expiration", "expires"])
+                if expiry_key and hasattr(self, "roi_expiry") and self.roi_expiry.value:
+                    mapping[expiry_key] = self.roi_expiry.value
+
+            print(f"UI MAPPING APPLIED: {mapping}")
+
+            # --- 3. AI Mapping Phase ---
+            # Filter to only fields NOT already handled by the UI hardcoding above.
+            ui_mapped_keys = set(mapping.keys())
+            remaining_fields = [f for f in pdf_fields if f not in ui_mapped_keys]
+
+            if remaining_fields:
+                # Show the loading indicator with an expansion panel
+                self._show_ai_loading_ui()
+
+                # Run the blocking LLM call off the UI thread.
+                # Pass field_schema so booleans (checkboxes) and enums (radio buttons)
+                # are handled correctly, and field_limits for character truncation.
+                ai_mapping = await asyncio.to_thread(
+                    map_pdf_fields,
+                    self.page.db_connection,
+                    self.patient_id,
+                    remaining_fields,
+                    field_schema,
+                    field_limits,
+                )
+
+                # Merge AI results — UI-sourced mapping always wins on collision
+                mapping.update(ai_mapping)
+                print(f"FINAL MERGED MAPPING: {mapping}")
+
+            # --- 4. PDF Generation ---
+            self.next_btn.text = "Saving..."
+            self.page.update()
+
+            # Derive output filename prefix from form type for clarity
+            form_prefix = "Intake" if self.selected_type == "intake" else "ROI"
+
             # --- Accessible Copy ---
             if self.check_accessible.value:
                 filled_acc = PdfWrapper(self.template_path, generate_appearance_streams=True).fill(mapping)
                 acc_bytes = filled_acc.read()
-                acc_file = os.path.join(download_dir, f"ROI_Accessible_{timestamp}.pdf")
+                acc_file = os.path.join(download_dir, f"{form_prefix}_Accessible_{timestamp}.pdf")
                 with open(acc_file, "wb") as f:
                     f.write(acc_bytes)
-                output_path = acc_file 
+                output_path = acc_file
 
             # --- Flattened Copy ---
             if self.check_flattened.value:
                 filled_flat = PdfWrapper(self.template_path, generate_appearance_streams=True).fill(mapping, flatten=True)
                 flat_bytes = filled_flat.read()
-                flat_file = os.path.join(download_dir, f"ROI_Flattened_{timestamp}.pdf")
+                flat_file = os.path.join(download_dir, f"{form_prefix}_Flattened_{timestamp}.pdf")
                 with open(flat_file, "wb") as f:
                     f.write(flat_bytes)
                 if not output_path:
                     output_path = flat_file
 
-            # 6. SECURE ARCHIVE
+            # --- 5. Secure Archive ---
             if self.save_to_db_check.value:
-                # Generate a filled copy for archive if neither version was created
                 archive_bytes = acc_bytes or flat_bytes
                 if not archive_bytes:
                     archive_bytes = PdfWrapper(
@@ -568,10 +861,10 @@ class PaperworkWizard:
                 try:
                     dest_dir = os.path.join(os.getcwd(), "data", str(self.patient_id))
                     os.makedirs(dest_dir, exist_ok=True)
-                    
-                    display_name = f"ROI_Signed_{timestamp}.pdf"
+
+                    display_name = f"{form_prefix}_Signed_{timestamp}.pdf"
                     enc_path = os.path.join(dest_dir, display_name + ".enc")
-                    
+
                     fmk = get_or_create_file_master_key(self.page.db_connection, dmk_raw=self.page.db_key_raw)
                     ciphertext = encrypt_bytes(fmk, archive_bytes)
 
@@ -585,21 +878,21 @@ class PaperworkWizard:
                         enc_path,
                         datetime.now().strftime("%Y-%m-%d %H:%M"),
                     )
-                    show_snack(self.page, "ROI securely archived.", "blue")
+                    show_snack(self.page, "Form securely archived.", "blue")
                 except Exception as db_ex:
                     print(f"Archive Error: {db_ex}")
                     show_snack(self.page, "Archive failed, check data folder.", "orange")
 
-            # 7. SUCCESS & CLEANUP
+            # --- 6. Success & Cleanup ---
             if output_path:
-                show_snack(self.page, f"PDF(s) generated in Downloads", "green")
+                show_snack(self.page, "PDF(s) generated in Downloads.", "green")
                 if os.name == 'nt':
                     os.startfile(output_path)
             elif self.save_to_db_check.value:
-                show_snack(self.page, "ROI archived to Patient Records.", "green")
+                show_snack(self.page, "Form archived to Patient Records.", "green")
             else:
                 show_snack(self.page, "No output versions selected.", "orange")
-            
+
             self.close()
 
             if sig_path and os.path.exists(sig_path):
@@ -611,3 +904,42 @@ class PaperworkWizard:
             self.next_btn.disabled = False
             self.next_btn.text = "Generate & Save"
             self.page.update()
+
+    def _show_ai_loading_ui(self):
+        """Swap the dialog content for an AI-loading state with an expansion panel."""
+        self.next_btn.text = "Please wait while your information is matched to the form fields"
+        self.next_btn.disabled = True
+
+        explanation = ft.ExpansionTile(
+            title=ft.Text("What is happening?", size=pt_scale(self.page, 13), italic=True),
+            initially_expanded=False,
+            controls=[
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=pt_scale(self.page, 8), vertical=pt_scale(self.page, 4)),
+                    content=ft.Text(
+                        "The AI is reading your saved medical records, including your allergies, "
+                        "medications, and medical conditions, and matching them to the blank fields "
+                        "in this form.\n\nNothing is sent online. This runs entirely on your device "
+                        "using a local AI model, the same one used for your health record extraction.",
+                        size=pt_scale(self.page, 12),
+                        color=ft.Colors.SECONDARY,
+                        selectable=True,
+                    ),
+                )
+            ],
+        )
+
+        self.content_area.controls.clear()
+        self.content_area.controls.extend([
+            ft.Text(
+                "Filling form fields...",
+                weight="bold",
+                size=pt_scale(self.page, 15),
+            ),
+            ft.ProgressBar(width=pt_scale(self.page, 440)),
+            explanation,
+        ])
+
+        if self.dlg.open:
+            self.dlg.update()
+        self.page.update()

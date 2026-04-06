@@ -33,6 +33,9 @@
 # -----------------------------------------------------------------------------
 
 
+import os
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")  # no stale .pyc after edits
+
 import flet as ft
 
 from utils.ui_helpers import pt_scale, show_snack
@@ -41,7 +44,6 @@ from core import paths  # noqa: F401 — bootstraps app directories on import
 from core import app_state
 from ui import routing, navigation, dialogs, login
 
-import os
 import glob
 import tempfile
 
