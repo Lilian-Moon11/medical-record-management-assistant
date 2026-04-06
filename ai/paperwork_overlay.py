@@ -389,7 +389,7 @@ def _map_labels_to_values(label_fields: list[dict], digest: str, llm=None) -> di
 
     try:
         raw = llm.complete(prompt).text
-        print(f"OVERLAY LLM RAW ({len(raw)} chars): {raw[:500]}")
+        # print(f"OVERLAY LLM RAW ({len(raw)} chars): {raw[:500]}")
         logger.debug("overlay: LLM raw output: %s", str(raw)[:400])
     except Exception as exc:
         logger.error("overlay: LLM call failed: %s", exc)
@@ -533,7 +533,7 @@ def fill_static_pdf(
     # Step 1: extract label positions
     try:
         label_fields = _extract_field_positions(template_path)
-        print(f"OVERLAY LABELS DETECTED: {[f['label'] for f in label_fields]}")
+        # print(f"OVERLAY LABELS DETECTED: {[f['label'] for f in label_fields]}")
         logger.info("overlay: found %d candidate label fields", len(label_fields))
     except Exception as exc:
         logger.error("overlay: field extraction failed: %s", exc)
@@ -560,7 +560,7 @@ def fill_static_pdf(
 
     # Step 3: LLM mapping (signature fields excluded inside helper)
     label_values = _map_labels_to_values(label_fields, digest, llm=llm)
-    print(f"OVERLAY LABEL→VALUE MAP: {label_values}")
+    # print(f"OVERLAY LABEL→VALUE MAP: {label_values}")
     # Step 3b: Inject today's date for date-like labels the LLM missed.
     # Catches "Date", "Signature Date", "Date Signed" etc., but NOT "Date of Birth".
     from datetime import datetime as _dt
@@ -575,7 +575,7 @@ def fill_static_pdf(
                 label_values[lbl] = _today
                 logger.debug("overlay: injected today's date for label '%s'", lbl)
 
-    print(f"OVERLAY LABEL→VALUE MAP (after date inject): {label_values}")
+    # print(f"OVERLAY LABEL→VALUE MAP (after date inject): {label_values}")
 
     # Step 4: build fill_items
     # - text fields: from LLM mapping
