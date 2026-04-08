@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller --onedir spec for Local Patient Advocate
+# PyInstaller --onedir spec for Medical Record Management Assistant
 # Build: pyinstaller --clean build/lpa.spec
 
 import sys

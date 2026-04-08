@@ -479,7 +479,7 @@ class PaperworkWizard:
             pdf_schema = PdfWrapper(template_data).schema
             schema_props = pdf_schema.get("properties", {}) if pdf_schema else {}
             pdf_fields = list(schema_props.keys())
-            print(f"PDF FIELDS DETECTED: {pdf_fields}")
+
 
             # Guard: if the PDF has no AcroForm fields, it is a static/flat PDF.
             # Show an explanatory dialog and let the user decide whether to
@@ -665,13 +665,19 @@ class PaperworkWizard:
                             ciphertext = encrypt_bytes(fmk, final_bytes)
                             with open(enc_path, "wb") as f:
                                 f.write(ciphertext)
-                            add_document(
+                            doc_id = add_document(
                                 self.page.db_connection,
                                 self.patient_id,
                                 display_name,
                                 enc_path,
                                 datetime.now().strftime("%Y-%m-%d %H:%M"),
                             )
+                            # Flag as processed so background AI extraction ignores it
+                            self.page.db_connection.execute(
+                                "INSERT OR IGNORE INTO ai_extraction_inbox (patient_id, doc_id, field_key, suggested_value, confidence, source_file_name, status) VALUES (?, ?, 'system.processed', ?, 1.0, ?, 'system')",
+                                (self.patient_id, doc_id, str(doc_id), display_name)
+                            )
+                            self.page.db_connection.commit()
                         except Exception as arc_ex:
                             print(f"Static archive error: {arc_ex}")
 
@@ -871,13 +877,19 @@ class PaperworkWizard:
                     with open(enc_path, "wb") as f:
                         f.write(ciphertext)
 
-                    add_document(
+                    doc_id = add_document(
                         self.page.db_connection,
                         self.patient_id,
                         display_name,
                         enc_path,
                         datetime.now().strftime("%Y-%m-%d %H:%M"),
                     )
+                    # Flag as processed so background AI extraction ignores it
+                    self.page.db_connection.execute(
+                        "INSERT OR IGNORE INTO ai_extraction_inbox (patient_id, doc_id, field_key, suggested_value, confidence, source_file_name, status) VALUES (?, ?, 'system.processed', ?, 1.0, ?, 'system')",
+                        (self.patient_id, doc_id, str(doc_id), display_name)
+                    )
+                    self.page.db_connection.commit()
                     show_snack(self.page, "Form securely archived.", "blue")
                 except Exception as db_ex:
                     print(f"Archive Error: {db_ex}")

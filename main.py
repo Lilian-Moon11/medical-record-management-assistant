@@ -10,7 +10,7 @@
 # Application entry point and composition root.
 #
 # This module wires together the UI shell, routing, dialogs, login flow,
-# and session state management to form the running Local Patient Advocate app.
+# and session state management to form the running Medical Record Management Assistant app.
 #
 # Responsibilities include:
 # - Initializing the Flet window and root container
@@ -66,7 +66,7 @@ def main(page: ft.Page):
     # Also wipe them when the user exits the app
     page.on_disconnect = lambda e: cleanup_decrypted_temp_files()
     # --- window / shell ---
-    page.title = "Local Patient Advocate"
+    page.title = "Medical Record Management Assistant"
     page.window.width = 1000
     page.window.height = 800
     page.theme_mode = ft.ThemeMode.SYSTEM

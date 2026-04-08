@@ -56,6 +56,15 @@ def get_llm():
     model_path = paths.model_dir / _GGUF_FILENAME
     if model_path.exists():
         logger.info("AI backend: using llama-cpp (%s)", model_path.name)
+        import ctypes
+        import llama_cpp
+        global _llama_log_cb
+        _llama_log_cb = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)(lambda *args: None)
+        try:
+            llama_cpp.llama_log_set(_llama_log_cb, ctypes.c_void_p())
+        except Exception:
+            pass
+
         from llama_index.llms.llama_cpp import LlamaCPP
         return LlamaCPP(
             model_path=str(model_path),

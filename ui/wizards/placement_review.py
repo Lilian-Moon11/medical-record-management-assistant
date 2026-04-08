@@ -121,11 +121,7 @@ def open_placement_review(
         dlg.open = False
         page.update()
         _cleanup()
-        # Debug: show what coordinates are being written to the final PDF
-        print("PLACEMENT_REVIEW — Save Final coordinates:")
-        for it in items:
-            print(f"  [{it.get('page', 0)}] {it.get('label','?')!r:35s} "
-                  f"x={it.get('x_pt', 0):.1f}  y={it.get('y_pt', 0):.1f}")
+
         try:
             final_bytes = rebuild_overlay(template_path, items)
         except Exception as exc:

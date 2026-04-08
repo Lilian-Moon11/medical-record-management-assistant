@@ -19,7 +19,7 @@
 
 import flet as ft
 from database.patient import update_profile, get_profile
-from utils.ui_helpers import pt_scale, themed_panel, show_snack
+from utils.ui_helpers import pt_scale, themed_panel, show_snack, make_info_button
 from utils.pdf_gen import generate_summary_pdf
 from ui.wizards.paperwork_wizard import PaperworkWizard
 
@@ -124,7 +124,7 @@ def get_overview_view(page: ft.Page):
         wizard = PaperworkWizard(page)
         wizard.open()
 
-    # --- AI Inbox badge ---
+    # --- AI Inbox badge (live-updatable) ---
     def _count_pending():
         try:
             cur = page.db_connection.cursor()
@@ -136,21 +136,44 @@ def get_overview_view(page: ft.Page):
         except:
             return 0
 
-    pending_count = _count_pending()
+    from ui.ai_review_dialog import show_ai_review_dialog
 
-    review_btn = ft.Container()
-    if pending_count > 0:
-        from ui.ai_review_dialog import show_ai_review_dialog
+    def _open_review(_):
+        show_ai_review_dialog(page, patient[0], on_close=_refresh_review_btn)
 
-        def _open_review(_):
-            show_ai_review_dialog(page, patient[0], on_close=lambda: page.update())
+    review_btn = ft.FilledButton(
+        "Review Suggestions",
+        icon=ft.Icons.NEW_RELEASES,
+        style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_600, color=ft.Colors.WHITE),
+        on_click=_open_review,
+        visible=False,
+    )
+    # Store on page so background threads can call _refresh_review_btn()
+    page._overview_review_btn = review_btn
 
-        review_btn = ft.FilledButton(
-            f"Review AI Suggestions ({pending_count})",
-            icon=ft.Icons.NEW_RELEASES,
-            style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_600, color=ft.Colors.WHITE),
-            on_click=_open_review,
-        )
+    def _refresh_review_btn():
+        count = _count_pending()
+        review_btn.text = f"Review Suggestions ({count})"
+        review_btn.visible = count > 0
+        try:
+            review_btn.update()
+        except Exception:
+            pass
+
+    # Populate immediately on render
+    _refresh_review_btn()
+    # Also expose refresher so other code can trigger it
+    page._refresh_overview_review_btn = _refresh_review_btn
+
+    _info_btn = make_info_button(page, "Overview", [
+        "You will find question marks located in the top right of each tab (like the one that you clicked to get here) that will give you some information/suggestions/appreciation as you navigate.",
+        "Inspiration for using the note space: a place to keep track of action items, things to remember to address at your next appointment, self affirmations. These notes can optionally be included when generating a summary PDF.",
+        "This is your command center; it has buttons for you to complete the major actions it can help with such as: approving or rejecting suggested changes to your health record, completing release of information (ROI) forms and other paperwork, and generating a customizable summary PDF to take to a doctor visit.",
+        "The orange \"Review Suggestions\" button appears here when new data has been extracted from a document you uploaded. Click it to accept or dismiss each suggestion.",
+        "Use \"Complete Paperwork\" to auto-fill common medical forms using your saved health record data.",
+        "Use \"Generate Summary\" to export a customisable PDF of your health record to share with providers.",
+        "Please visit my website for informational documents about navigating the (mainly USA) healthcare system and other projects I am working on {website_url}.",
+    ])
 
     return ft.Container(
         padding=pt_scale(page, 20),
@@ -168,7 +191,7 @@ def get_overview_view(page: ft.Page):
                         ),
                         ft.Container(expand=True),
                         review_btn,
-                        ft.Container(width=pt_scale(page, 10)) if pending_count > 0 else ft.Container(),
+                        ft.Container(width=pt_scale(page, 10)),
                         ft.FilledButton(
                             "Complete Paperwork",
                             icon=ft.Icons.ASSIGNMENT_OUTLINED,
@@ -180,6 +203,7 @@ def get_overview_view(page: ft.Page):
                             icon=ft.Icons.PICTURE_AS_PDF,
                             on_click=handle_generate_pdf,
                         ),
+                        _info_btn,
                     ],
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),

@@ -65,7 +65,11 @@ def pt_scale(page: ft.Page, px: int) -> int:
     return int(px * scale)
 
 def show_snack(page: ft.Page, message: str, color=ft.Colors.GREEN):
-    """Displays a snackbar message (create once, reuse forever). Accepts ft.Colors.* or 'green'/'red' strings."""
+    """Displays a snackbar message. Accepts ft.Colors.* or 'green'/'red' strings.
+
+    Creates a fresh SnackBar each call and injects it directly into page.overlay
+    so it renders above open dialogs, then removes itself on dismiss.
+    """
     try:
         # Allow legacy string colors
         if isinstance(color, str):
@@ -78,18 +82,22 @@ def show_snack(page: ft.Page, message: str, color=ft.Colors.GREEN):
             }
             color = color_map.get(color.lower(), ft.Colors.GREEN)
 
-        if not hasattr(page, "_snack_text") or page._snack_text is None:
-            page._snack_text = ft.Text("")
-            page.snack_bar = ft.SnackBar(content=page._snack_text, bgcolor=ft.Colors.GREEN)
+        def _on_dismiss(e):
+            try:
+                if snack in page.overlay:
+                    page.overlay.remove(snack)
+                    page.update()
+            except Exception:
+                pass
 
-        page._snack_text.value = message
-        page.snack_bar.bgcolor = color
-        
-        if hasattr(page, "open"):
-            page.open(page.snack_bar)
-        else:
-            page.snack_bar.open = True
-            page.update()
+        snack = ft.SnackBar(
+            content=ft.Text(message),
+            bgcolor=color,
+            open=True,
+            on_dismiss=_on_dismiss,
+        )
+        page.overlay.append(snack)
+        page.update()
     except Exception as ex:
         print("SNACK ERROR:", ex, "| message:", message)
 
@@ -163,4 +171,91 @@ def make_eye_btn(page: ft.Page, revealed: bool, visible: bool = True) -> "ft.Ico
         icon=ft.Icons.VISIBILITY_OFF if revealed else ft.Icons.VISIBILITY,
         tooltip="Hide" if revealed else "Reveal",
         visible=visible,
+    )
+
+
+def make_info_button(page: ft.Page, title: str, lines: list) -> "ft.IconButton":
+    """
+    Returns a circled-? icon button that opens a help dialog.
+
+    Args:
+        page:  The Flet page (for overlay access).
+        title: Dialog title (tab name).
+        lines: List of strings (or ft.Controls) to show as bullet points.
+               Strings are auto-wrapped in ft.Text; ft.Control objects are inserted as-is.
+    """
+    # Use a stable key derived from the title so re-renders don't duplicate overlays.
+    import re as _re
+    dlg_key = "_info_dlg_" + _re.sub(r"[^a-z0-9]", "_", title.lower())
+
+    def _open(_e=None):
+        # Create dialog once per session and keep it in page.overlay
+        if not hasattr(page, dlg_key):
+            bullet_controls: list = []
+            for ln in lines:
+                if isinstance(ln, ft.Control):
+                    bullet_controls.append(ln)
+                else:
+                    bullet_controls.append(
+                        ft.Row(
+                            [
+                                ft.Icon(ft.Icons.CIRCLE, size=6, color=ft.Colors.PRIMARY
+                                        if hasattr(ft.Colors, "PRIMARY") else ft.Colors.BLUE),
+                                ft.Text(str(ln), expand=True, size=14),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.START,
+                            spacing=8,
+                        )
+                    )
+
+            def _close(_e=None):
+                dlg = getattr(page, dlg_key, None)
+                if dlg:
+                    dlg.open = False
+                    try:
+                        dlg.update()
+                    except Exception:
+                        pass
+                page.update()
+
+            dlg = ft.AlertDialog(
+                modal=False,
+                title=ft.Row(
+                    [
+                        ft.Icon(ft.Icons.HELP, color=ft.Colors.PRIMARY
+                                if hasattr(ft.Colors, "PRIMARY") else ft.Colors.BLUE, size=22),
+                        ft.Text(title, size=18, weight="bold"),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                content=ft.Container(
+                    width=460,
+                    content=ft.Column(bullet_controls, spacing=10, tight=True),
+                ),
+                actions=[
+                    ft.FilledButton("Got it", icon=ft.Icons.THUMB_UP, on_click=_close),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+                on_dismiss=_close,
+            )
+            setattr(page, dlg_key, dlg)
+            page.overlay.append(dlg)
+
+        dlg = getattr(page, dlg_key)
+        dlg.open = True
+        try:
+            dlg.update()
+        except Exception:
+            pass
+        page.update()
+
+    return ft.IconButton(
+        icon=ft.Icons.HELP_OUTLINE,
+        tooltip=f"Help — {title}",
+        icon_size=20,
+        style=ft.ButtonStyle(
+            color=ft.Colors.PRIMARY if hasattr(ft.Colors, "PRIMARY") else ft.Colors.BLUE,
+        ),
+        on_click=_open,
     )

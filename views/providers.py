@@ -18,7 +18,7 @@
 from __future__ import annotations
 import flet as ft
 
-from utils.ui_helpers import show_snack, themed_panel, pt_scale
+from utils.ui_helpers import show_snack, themed_panel, pt_scale, make_info_button
 from database import (
     list_providers,
     create_provider,
@@ -368,11 +368,16 @@ def get_providers_view(page: ft.Page):
         initial_rows = []
     _build_rows(initial_rows)
 
+    _info_btn = make_info_button(page, "Provider Directory", [
+        "This is primarily used for completion of release of information forms, but can be used for any purpose you see fit.",
+    ])
+
     header = ft.Row(
         [
             ft.Text("Provider Directory", size=20, weight="bold"),
             ft.Container(expand=True),
             ft.FilledButton("Add Provider", icon=ft.Icons.PERSON_ADD, on_click=open_new_provider),
+            _info_btn,
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )

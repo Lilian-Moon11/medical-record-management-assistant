@@ -54,7 +54,7 @@ import flet as ft
 
 from database import get_setting, set_setting
 
-from utils.ui_helpers import pt_scale, show_snack, run_async, copy_with_snack
+from utils.ui_helpers import pt_scale, show_snack, run_async, copy_with_snack, make_info_button
 
 from utils.airlock import export_profile
 
@@ -926,6 +926,11 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         page._wipe_dlg.open = True
         page.update()
 
+    _info_btn = make_info_button(page, "Settings", [
+        "\"Show source of information\" reveals which document or action produced each health record entry, with a hyperlink to the source document where available.",
+        "The Recovery Key section lets you rotate to a new key, which will make your old key invalid. A use case for this would be if you suspect your key has been seen by someone else, or if you have lost your key but remember your password. Always save the new key before closing the dialog or the old key stays valid.",
+    ])
+
     # 4. Return Layout
 
     return ft.Container(
@@ -933,7 +938,13 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         padding=pt_scale(page, 20),
         content=ft.Column(
             [
-                ft.Text("Settings", size=pt_scale(page, 24), weight="bold"),
+                ft.Row(
+                    [
+                        ft.Text("Settings", size=pt_scale(page, 24), weight="bold"),
+                        ft.Container(expand=True),
+                        _info_btn,
+                    ]
+                ),
                 ft.Divider(),
                 theme_dd,
                 hc_switch,
@@ -967,7 +978,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 ft.Divider(),
                 ft.Text("Export My Data", size=pt_scale(page, 18), weight="bold"),
                 ft.Text(
-                    "Save all your medical records to a portable file you can "
+                    "Save all your medical records to a portable zip file you can "
                     "move to another computer.  The file is encrypted with your "
                     "database password.",
                     size=pt_scale(page, 14),
@@ -986,7 +997,8 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 ft.Text("Library / Shared Device Mode", size=pt_scale(page, 18), weight="bold", color=ft.Colors.RED),
                 ft.Text(
                     "Are you using a public computer or someone else's device? "
-                    "Use this to securely erase your local database and temporary files before exiting.",
+                    "Use this to securely erase your local database and temporary files before exiting. "
+                    "Always save a backup of your data before using this feature.",
                     size=pt_scale(page, 14),
                     color=ft.Colors.GREY,
                 ),

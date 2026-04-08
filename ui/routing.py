@@ -37,6 +37,9 @@ from views.health_record import get_health_record_view
 from views.settings import get_settings_view
 from views.providers import get_providers_view
 from views.labs import get_labs_view
+from views.vaccines import get_vaccines_view
+from views.family_history import get_family_history_view
+
 
 
 def apply_settings(page, *, get_view_for_index):
@@ -110,6 +113,10 @@ def make_get_view_for_index(page, *, apply_settings_callback):
             elif index == 4:
                 return get_providers_view(page)
             elif index == 5:
+                return get_vaccines_view(page)
+            elif index == 6:
+                return get_family_history_view(page)
+            elif index == 7:
                 return get_settings_view(page, apply_settings_callback=apply_settings_callback)
 
             return ft.Text("Unknown View")

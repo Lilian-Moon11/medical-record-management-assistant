@@ -76,6 +76,7 @@ def _ensure_schema(conn):
         "ALTER TABLE patient_field_values ADD COLUMN ai_confidence REAL",
         "ALTER TABLE documents ADD COLUMN visit_date TEXT",
         "ALTER TABLE documents ADD COLUMN specialty TEXT",
+        "ALTER TABLE lab_results ADD COLUMN category TEXT DEFAULT 'Lab'",
     ):
         try:
             cur.execute(col_sql)
@@ -90,6 +91,8 @@ def _ensure_schema(conn):
         ("allergyintolerance.list",         "Allergies (JSON)",           "json",   "Allergies",    0),
         ("medicationstatement.current_list","Current Medications (JSON)", "json",   "Medications",  0),
         ("insurance.list",                  "Insurance Plans (JSON)",     "json",   "Insurance",    0),
+        ("immunization.list",               "Immunizations (JSON)",       "json",   "Immunizations",0),
+        ("family_history.list",             "Family History (JSON)",      "json",   "Family History",0),
     ]
     for k, label, dt, cat, sens in defaults:
         ensure_field_definition(conn, k, label, dt, cat, sens, commit=False)

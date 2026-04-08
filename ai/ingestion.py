@@ -421,6 +421,14 @@ Document:
                 except Exception as ex:
                     logger.error("Extraction failed for doc %d: %s", doc["id"], ex)
 
+        if not (stop_event and stop_event.is_set()):
+            # Always push a dummy processed record so _get_unindexed_docs stops fetching it
+            conn.execute(
+                "INSERT OR IGNORE INTO ai_extraction_inbox (patient_id, doc_id, field_key, suggested_value, confidence, source_file_name, status) VALUES (?, ?, 'system.processed', ?, 1.0, ?, 'system')",
+                (patient_id, doc["id"], str(doc["id"]), file_name)
+            )
+            conn.commit()
+
         if progress_cb:
             progress_cb(i + 1, total)
         logger.info("Ingested doc %d (%s)", doc["id"], file_name)

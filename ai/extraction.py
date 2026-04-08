@@ -51,30 +51,7 @@ _CLINICAL_KEYWORDS = frozenset([
     "post-op", "preoperative", "surgical", "operation report",
 ])
 
-_EXTRACTION_PROMPT_TEMPLATE = """\
-Extract structured medical fields from the following document excerpt.
-Return ONLY a valid JSON array. Each item must have:
-  - "field_key": exactly one of the known keys below
-  - "value": extracted value as a string OR a nested JSON object (for lists)
-  - "confidence": float 0.0-1.0
-
-Known keys:
-patient.name, patient.phone, patient.email, patient.address (include street, apt/unit if present, city, state, zip), allergyintolerance.list, medicationstatement.current_list, insurance.list, procedures.list, conditions.list
-
-EXAMPLE OUTPUT FORMAT:
-[
-  {{"field_key": "patient.address", "value": "1210 Cullen Dr, Apt 4B, Forks, WA 98331", "confidence": 0.9}},
-  {{"field_key": "allergyintolerance.list", "value": {{"substance": "Kryptonite", "reaction": "Weakness", "severity": "High"}}, "confidence": 0.9}},
-  {{"field_key": "medicationstatement.current_list", "value": {{"name": "Felix Felicis", "dose": "1 vial", "frequency": "Daily"}}, "confidence": 0.95}}
-]
-
-Document:
-\"\"\"
-{text}
-\"\"\"
-
-Return ONLY valid JSON. Your output must strictly match the format of the brackets and quotes in the example above.
-"""
+from ai.prompts import _EXTRACTION_PROMPT_TEMPLATE
 
 
 def _is_clinical_source(text: str) -> bool:

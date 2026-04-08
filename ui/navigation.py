@@ -10,7 +10,7 @@
 # App shell layout helpers for navigation and critical error display.
 #
 # This module provides small, reusable UI helpers that render the main dashboard
-# frame (NavigationRail + content area) and a simplified ìcritical errorî screen
+# frame (NavigationRail + content area) and a simplified ‚Äúcritical error‚Äù screen
 # for unrecoverable failures.
 #
 # Responsibilities include:
@@ -59,9 +59,11 @@ def show_main_dashboard(page: ft.Page, *, get_view_for_index):
             destinations=[
                 ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD, label="Overview"),
                 ft.NavigationRailDestination(icon=ft.Icons.BADGE, label="Health Record"),
-                ft.NavigationRailDestination(icon=ft.Icons.SCIENCE, label="Labs"),
+                ft.NavigationRailDestination(icon=ft.Icons.SHOW_CHART, label="Vitals & Labs"),
                 ft.NavigationRailDestination(icon=ft.Icons.FOLDER, label="Documents"),
                 ft.NavigationRailDestination(icon=ft.Icons.LOCAL_HOSPITAL, label="Providers"),
+                ft.NavigationRailDestination(icon=ft.Icons.VACCINES, label="Vaccines"),
+                ft.NavigationRailDestination(icon=ft.Icons.ACCOUNT_TREE, label="Family History"),
                 ft.NavigationRailDestination(icon=ft.Icons.SETTINGS, label="Settings"),
             ],
             on_change=nav_change,

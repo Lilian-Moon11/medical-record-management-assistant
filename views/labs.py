@@ -28,7 +28,7 @@ import flet as ft
 import flet.canvas as cv
 import re
 from datetime import date
-from utils.ui_helpers import show_snack, themed_panel, pt_scale
+from utils.ui_helpers import show_snack, themed_panel, pt_scale, make_info_button
 from database import (
     # Reports
     list_lab_reports,
@@ -67,6 +67,8 @@ def get_labs_view(page: ft.Page):
         page._pending_lab_result_delete = None
     if not hasattr(page, "_labs_report_cache"):
         page._labs_report_cache = {}
+    if not hasattr(page, "_labs_category"):
+        page._labs_category = "Vitals"
 
     # ----------------------------
     # Helpers
@@ -326,7 +328,7 @@ def get_labs_view(page: ft.Page):
         if getattr(page, "_lab_result_info_dlg", None) is not None:
             return page._lab_result_info_dlg
 
-        page._lab_result_info_title = ft.Text("Lab Result Details", weight="bold")
+        page._lab_result_info_title = ft.Text("Measurement Details", weight="bold")
         page._lab_result_info_body = ft.Column([], tight=True, scroll=True)
 
         def _close(_=None):
@@ -502,11 +504,13 @@ def get_labs_view(page: ft.Page):
         tn = test_name or page._labs_selected_test_name
         if not tn:
             chart_container.content = ft.Text(
-                "Select a test from the menu.",
+                "Select a metric from the menu.",
                 italic=True,
             )
             results_table.rows = []
+            test_title.value = "Select a metric or test"
             try:
+                test_title.update()
                 chart_container.update()
                 results_table.update()
                 page.update()
@@ -515,7 +519,7 @@ def get_labs_view(page: ft.Page):
             return
 
         try:
-            rows = list_all_results_for_test(page.db_connection, patient_id, tn)
+            rows = list_all_results_for_test(page.db_connection, patient_id, tn, category=page._labs_category)
         except Exception as ex:
             show_snack(page, f"Load results failed: {ex}", "red")
             rows = []
@@ -546,7 +550,7 @@ def get_labs_view(page: ft.Page):
         """Populate the test menu sidebar with distinct test names."""
         try:
             names = list_distinct_test_names(
-                page.db_connection, patient_id, search=search
+                page.db_connection, patient_id, search=search, category=page._labs_category
             )
         except Exception as ex:
             show_snack(page, f"Load tests failed: {ex}", "red")
@@ -589,7 +593,7 @@ def get_labs_view(page: ft.Page):
         _build_test_menu(test_search_field.value or None)
 
     test_search_field = ft.TextField(
-        hint_text="Search tests...",
+        hint_text="Search metrics...",
         prefix_icon=ft.Icons.SEARCH,
         dense=True,
         on_change=_on_test_search,
@@ -601,7 +605,7 @@ def get_labs_view(page: ft.Page):
         width=pt_scale(page, 230),
         content=ft.Column(
             [
-                ft.Text("Test Menu", size=16, weight="bold"),
+                ft.Text("Metrics / Tests", size=16, weight="bold"),
                 test_search_field,
                 ft.Container(content=test_list_view, expand=True),
             ],
@@ -617,13 +621,13 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     # Right panel header
     # ----------------------------
-    test_title = ft.Text("Select a test", size=22, weight="bold")
+    test_title = ft.Text("Select a metric or test", size=22, weight="bold")
 
     add_data_btn = ft.FilledButton(
-        "Add Lab Data",
+        "Add Data",
         icon=ft.Icons.ADD,
         on_click=lambda e: open_add_lab_data(),
-        disabled=True,
+        disabled=False,
     )
 
     right_header = ft.Row(
@@ -644,7 +648,7 @@ def get_labs_view(page: ft.Page):
         if getattr(page, "_lab_result_edit_dlg", None) is not None:
             return page._lab_result_edit_dlg
 
-        page._lx_test = ft.TextField(label="Test name*", autofocus=True)
+        page._lx_test = ft.TextField(label="Metric / Test name*", autofocus=True)
         page._lx_value_text = ft.TextField(label="Value (text)*")
         page._lx_unit = ft.TextField(label="Unit")
         page._lx_ref_range = ft.TextField(label="Reference range (e.g. 70-130)")
@@ -732,6 +736,7 @@ def get_labs_view(page: ft.Page):
                         abnormal_flag=flag,
                         result_date=rdate,
                         notes=notes,
+                        category=page._labs_category,
                     )
                     show_snack(page, f"Result added (#{new_id}).", "blue")
                 else:
@@ -751,6 +756,7 @@ def get_labs_view(page: ft.Page):
                         abnormal_flag=flag,
                         result_date=rdate,
                         notes=notes,
+                        category=page._labs_category,
                     )
                     show_snack(
                         page,
@@ -769,7 +775,7 @@ def get_labs_view(page: ft.Page):
 
         page._lab_result_edit_dlg = ft.AlertDialog(
             modal=False,
-            title=ft.Text("Lab Result"),
+            title=ft.Text("Measurement / Result"),
             content=ft.Container(
                 width=pt_scale(page, 520),
                 content=ft.Column(
@@ -961,15 +967,75 @@ def get_labs_view(page: ft.Page):
         spacing=10,
     )
 
+    main_view = ft.Row(
+        [
+            test_menu_panel,
+            ft.Container(content=right_panel, expand=True, padding=pt_scale(page, 10)),
+        ],
+        expand=True,
+        vertical_alignment=ft.CrossAxisAlignment.START,
+    )
+
+    def _on_tab_change(is_vitals):
+        page._labs_category = "Vitals" if is_vitals else "Lab"
+        page._labs_selected_test_name = None
+        _build_test_menu()
+        refresh_for_test(None)
+        
+        tab_vitals.border = ft.border.only(bottom=ft.BorderSide(3, ft.Colors.BLUE)) if is_vitals else None
+        tab_labs.border = ft.border.only(bottom=ft.BorderSide(3, ft.Colors.BLUE)) if not is_vitals else None
+        
+        for c in tab_vitals.content.controls:
+            c.color = ft.Colors.BLUE if is_vitals else ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY
+        for c in tab_labs.content.controls:
+            c.color = ft.Colors.BLUE if not is_vitals else ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY
+
+        tab_vitals.update()
+        tab_labs.update()
+        page.update()
+
+    is_vitals_start = (page._labs_category == "Vitals")
+    base_color = ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY
+
+    tab_vitals = ft.Container(
+        content=ft.Row([ft.Icon(ft.Icons.MONITOR_HEART, size=18, color=ft.Colors.BLUE if is_vitals_start else base_color), ft.Text("Vitals", weight="bold", color=ft.Colors.BLUE if is_vitals_start else base_color)], alignment=ft.MainAxisAlignment.CENTER),
+        expand=True,
+        padding=10,
+        ink=True,
+        on_click=lambda _: _on_tab_change(True),
+        border=ft.border.only(bottom=ft.BorderSide(3, ft.Colors.BLUE)) if is_vitals_start else None,
+    )
+
+    tab_labs = ft.Container(
+        content=ft.Row([ft.Icon(ft.Icons.SCIENCE, size=18, color=ft.Colors.BLUE if not is_vitals_start else base_color), ft.Text("Clinical Labs", weight="bold", color=ft.Colors.BLUE if not is_vitals_start else base_color)], alignment=ft.MainAxisAlignment.CENTER),
+        expand=True,
+        padding=10,
+        ink=True,
+        on_click=lambda _: _on_tab_change(False),
+        border=ft.border.only(bottom=ft.BorderSide(3, ft.Colors.BLUE)) if not is_vitals_start else None,
+    )
+
+    tabs_control = ft.Row([tab_vitals, tab_labs], alignment=ft.MainAxisAlignment.CENTER)
+
+    _info_btn = make_info_button(page, "Vitals & Labs", [
+        "This tab has two sub-tabs: Vitals (daily measurements like blood pressure or weight) and Clinical Labs (official test results from a lab, clinic, or hospital).",
+        "Select a metric or test name from the left sidebar to see its trend chart and history table.",
+        "The trend chart plots numeric values over time. A green dashed line shows the reference range (normal bounds) when available.",
+        "Click a column header in the Historical Test Table to sort results.",
+        "Extracted lab data from uploaded documents appears here after you accept suggestions on the Overview tab.",
+    ])
+
     return themed_panel(
         page,
-        ft.Row(
+        ft.Column(
             [
-                test_menu_panel,
-                ft.Container(content=right_panel, expand=True, padding=pt_scale(page, 10)),
+                ft.Row(
+                    [tabs_control, ft.Container(expand=True), _info_btn],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(content=main_view, expand=True),
             ],
             expand=True,
-            vertical_alignment=ft.CrossAxisAlignment.START,
         ),
         padding=pt_scale(page, 10),
         radius=10,

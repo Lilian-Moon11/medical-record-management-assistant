@@ -1,4 +1,4 @@
-# Local Patient Advocate — Windows Portable Build Script
+# Medical Record Management Assistant — Windows Portable Build Script
 # Run from the repository root: .\build\build_windows.ps1
 
 $ErrorActionPreference = "Stop"

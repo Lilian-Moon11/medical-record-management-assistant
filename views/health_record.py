@@ -60,6 +60,7 @@ from utils.ui_helpers import (
     clean_lbl,
     slugify_label,
     make_eye_btn,
+    make_info_button,
 )
 from ui.dialogs import ensure_patient_info_dialogs
 
@@ -695,6 +696,10 @@ def get_health_record_view(page: ft.Page):
     ensure_patient_info_dialogs(page, refresh)
     ensure_field_definition(page.db_connection, "conditions.list", "Conditions", data_type="json", category="History")
     ensure_field_definition(page.db_connection, "procedures.list", "Surgeries", data_type="json", category="History")
+    # Optional identity fields — not required, fully deletable
+    ensure_field_definition(page.db_connection, "patient.pronouns", "Pronouns", data_type="text", category="Demographics")
+    ensure_field_definition(page.db_connection, "patient.biological_sex", "Biological Sex", data_type="text", category="Demographics")
+
 
     allergies_key = "allergyintolerance.list"
     meds_key = "medicationstatement.current_list"
@@ -722,14 +727,16 @@ def get_health_record_view(page: ft.Page):
     surgeries_key = "procedures.list"
 
     hidden_seeds = {
-        allergies_key, 
-        meds_key, 
+        allergies_key,
+        meds_key,
         insurance_key,
-        conditions_key, 
+        conditions_key,
         surgeries_key,
         "providers.list",
-        "section.demographics", 
-        "section.other"
+        "family_history.list",
+        "immunization.list",
+        "section.demographics",
+        "section.other",
     }
 
     for d in defs:
@@ -906,23 +913,33 @@ def get_health_record_view(page: ft.Page):
     )
     sections += [insurance_panel, ft.Container(height=pt_scale(page, 10))]
 
+    # Categories that have their own dedicated sidebar tabs — exclude from Health Record
+    _EXCLUDED_CATS = {"demographics", "family history", "immunizations", "vaccines"}
+
     def _cat_sort(n: str):
         return 99 if n.lower() == "other" else 10
 
     for cat in sorted(grouped.keys(), key=_cat_sort):
         if cat == "Demographics":
             continue
+        if cat.lower() in _EXCLUDED_CATS:
+            continue
         panel = CategoryPanel(
-            page, 
-            patient_id, 
-            cat, 
-            grouped[cat], 
+            page,
+            patient_id,
+            cat,
+            grouped[cat],
             value_map,
             # Assigning custom categories to the "section.other" master switch
-            is_section_sensitive=is_sens("section.other") 
+            is_section_sensitive=is_sens("section.other")
         )
         sections.append(themed_panel(page, panel, padding=pt_scale(page, 12)))
         sections.append(ft.Container(height=pt_scale(page, 10)))
+
+    _info_btn = make_info_button(page, "Health Record", [
+        "The \"Edit Visibility\" button lets you mark entire sections as sensitive so they are hidden by default.",
+        "Fields with an eye button are sensitive. Use the eye button to reveal or hide values in those sections.",
+    ])
 
     return ft.Container(
         padding=pt_scale(page, 20),
@@ -937,6 +954,7 @@ def get_health_record_view(page: ft.Page):
                             icon=ft.Icons.SHIELD,
                             on_click=lambda _: page.open_bulk_edit_dlg(),
                         ),
+                        _info_btn,
                     ]
                 ),
                 ft.Divider(),

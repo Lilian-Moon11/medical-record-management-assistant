@@ -451,7 +451,8 @@ def _build_overlay_bytes(page_count: int, fill_items: list[dict]) -> bytes:
             sig_path = item.get("sig_path")
             if sig_path and os.path.exists(sig_path):
                 # Render signature PNG as an embedded image
-                sig_top = max(10.0, min(y_pt_fpdf - _SIG_IMG_H_PT + 9, ph - _SIG_IMG_H_PT - 5))
+                # Align top of image with the top of the UI placement block
+                sig_top = max(10.0, min(ph - item["y_pt"] - 20, ph - _SIG_IMG_H_PT - 5))
                 try:
                     pdf.image(sig_path, x=x_pt, y=sig_top, w=_SIG_IMG_W_PT, h=_SIG_IMG_H_PT)
                 except Exception as sig_ex:

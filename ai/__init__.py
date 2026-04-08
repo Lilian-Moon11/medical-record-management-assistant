@@ -5,7 +5,7 @@
 # published by the Free Software Foundation, either version 3 of the
 # License, or any later version.
 
-# ai/ package — Local Patient Advocate AI layer
+# ai/ package — Medical Record Management Assistant AI layer
 #
 # Provides:
 #   ai.backend        — tiered LLM (Ollama-first, llama-cpp fallback)

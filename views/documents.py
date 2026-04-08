@@ -45,7 +45,7 @@ from database import (
     delete_document,
     get_document_path,
 )
-from utils.ui_helpers import pt_scale, show_snack
+from utils.ui_helpers import pt_scale, show_snack, make_info_button
 
 
 def get_documents_view(page: ft.Page):
@@ -387,12 +387,20 @@ def get_documents_view(page: ft.Page):
                     )
                     show_snack(page, "AI Extraction Complete! Check your Dashboard.", "green")
 
-                    # Force refresh the current active view (e.g., Dashboard to show new suggestions)
+                    # Refresh the review button in-place on whatever tab is active.
+                    # If Overview is showing, update its live button directly.
+                    if hasattr(page, "_refresh_overview_review_btn"):
+                        try:
+                            page._refresh_overview_review_btn()
+                        except Exception:
+                            pass
+                    # If user is on a different tab, rebuild that tab so its badge appears too.
                     if hasattr(page, "_get_view_for_index") and getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
                         try:
                             idx = page.nav_rail.selected_index
-                            page.content_area.content = page._get_view_for_index(idx)
-                            page.content_area.update()
+                            if idx != 0:  # Overview already updated itself above
+                                page.content_area.content = page._get_view_for_index(idx)
+                                page.content_area.update()
                         except Exception as refresh_ex:
                             print(f"Auto-refresh failed: {refresh_ex}")
                             
@@ -408,6 +416,39 @@ def get_documents_view(page: ft.Page):
     # 7. INITIAL LAYOUT BUILD
     refresh_table(page._doc_search_term, update_ui=False)
 
+    # --- AI Inbox badge ---
+    def _count_pending():
+        try:
+            cur = page.db_connection.cursor()
+            cur.execute(
+                "SELECT COUNT(*) FROM ai_extraction_inbox WHERE patient_id=? AND status='pending'",
+                (patient_id,),
+            )
+            return cur.fetchone()[0]
+        except:
+            return 0
+
+    pending_count = _count_pending()
+    review_btn = ft.Container()
+    if pending_count > 0:
+        from ui.ai_review_dialog import show_ai_review_dialog
+        def _open_review(_):
+            show_ai_review_dialog(page, patient_id, on_close=lambda: refresh_table(search_field.value, update_ui=True))
+        review_btn = ft.FilledButton(
+            f"Review Suggestions ({pending_count})",
+            icon=ft.Icons.NEW_RELEASES,
+            style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_600, color=ft.Colors.WHITE),
+            on_click=_open_review,
+        )
+
+    _info_btn = make_info_button(page, "Medical Records", [
+        "Upload any medical document (PDF, image, etc.) using the \"Upload Document\" button.",
+        "After uploading, AI scans the document in the background. Once complete, an orange \"Review Suggestions\" button will appear on the Overview tab — tap it to review and accept extracted health data.",
+        "Click a column header (Upload Date, Visit Date, Specialty) to sort the table by that column. Click again to reverse the order.",
+        "Use the search bar to filter documents by file name.",
+        "Documents are encrypted on your device. The Open button decrypts a temporary copy for viewing.",
+    ])
+
     return ft.Container(
         padding=pt_scale(page, 20),
         expand=True,
@@ -417,11 +458,14 @@ def get_documents_view(page: ft.Page):
                     [
                         ft.Text("Medical Records", size=pt_scale(page, 24), weight="bold"),
                         ft.Container(expand=True),
-                        ft.Button(
+                        review_btn,
+                        ft.Container(width=pt_scale(page, 10)) if pending_count > 0 else ft.Container(),
+                        ft.FilledButton(
                             "Upload Document",
                             icon=ft.Icons.UPLOAD_FILE,
                             on_click=upload_document_click,
                         ),
+                        _info_btn,
                     ]
                 ),
                 ft.Divider(),

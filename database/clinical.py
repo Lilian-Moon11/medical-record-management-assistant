@@ -160,11 +160,14 @@ def delete_lab_result(conn, patient_id, result_id):
     return cur.rowcount
 
 # Test-centric queries (for Labs redesign)
-def list_distinct_test_names(conn, patient_id, search=None):
+def list_distinct_test_names(conn, patient_id, search=None, category=None):
     """Return sorted unique test names across all lab_results for a patient."""
     cur = conn.cursor()
     params = [patient_id]
     sql = "SELECT DISTINCT test_name FROM lab_results WHERE patient_id = ?"
+    if category:
+        sql += " AND category = ?"
+        params.append(category)
     if search:
         sql += " AND test_name LIKE ?"
         params.append(_like(search))
@@ -172,7 +175,7 @@ def list_distinct_test_names(conn, patient_id, search=None):
     cur.execute(sql, tuple(params))
     return [row[0] for row in cur.fetchall()]
 
-def list_all_results_for_test(conn, patient_id, test_name):
+def list_all_results_for_test(conn, patient_id, test_name, category=None):
     """Return all lab_results rows for a given test_name across all reports,
     joined with lab_reports for source_document_id and collected_date.
     Ordered by result_date ASC for chronological charting.
@@ -192,9 +195,15 @@ def list_all_results_for_test(conn, patient_id, test_name):
         FROM lab_results r
         LEFT JOIN lab_reports lr ON lr.id = r.report_id AND lr.patient_id = r.patient_id
         WHERE r.patient_id = ? AND r.test_name = ?
-        ORDER BY COALESCE(r.result_date, lr.collected_date) ASC, r.id ASC
     """
-    cur.execute(sql, (patient_id, test_name))
+    params = [patient_id, test_name]
+    if category:
+        sql += " AND r.category = ?"
+        params.append(category)
+        
+    sql += " ORDER BY COALESCE(r.result_date, lr.collected_date) ASC, r.id ASC"
+    
+    cur.execute(sql, tuple(params))
     return cur.fetchall()
 
 # Documents
@@ -207,6 +216,7 @@ def add_document(conn, patient_id, file_name, file_path, upload_date):
     cur = conn.cursor()
     cur.execute("INSERT INTO documents (patient_id, file_name, file_path, upload_date) VALUES (?, ?, ?, ?)", (patient_id, file_name, file_path, upload_date))
     conn.commit()
+    return cur.lastrowid
 
 def delete_document(conn, document_id):
     cur = conn.cursor()

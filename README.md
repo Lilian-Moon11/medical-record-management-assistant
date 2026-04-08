@@ -1,6 +1,6 @@
-Local Patient Advocate
+Medical Record Management Assistant
 
-Local Patient Advocate is a secure, private desktop app for storing medical records and preparing Release of Information (ROI) forms — without sending your data to the cloud.
+Medical Record Management Assistant is a secure, private desktop app for storing medical records and preparing Release of Information (ROI) forms — without sending your data to the cloud.
 
 Your data stays on your computer, encrypted, and under your control.
 
@@ -25,7 +25,7 @@ This app is designed for people who care deeply about privacy and don’t want t
 
 The Privacy Promise (Plain Language)
 
-Local Patient Advocate follows a local-first, zero-trust design:
+Medical Record Management Assistant follows a local-first, zero-trust design:
 
 Runs only on your computer
 Nothing is uploaded anywhere. No servers. No accounts.

@@ -35,6 +35,74 @@ def mark_suggestion(conn, suggestion_id: int, status: str):
     conn.commit()
 
 def apply_suggestion(conn, patient_id: int, s: dict):
+    # Intercept non-EAV domains first
+    if s["field_key"] == "providers.list":
+        try:
+            val_obj = json.loads(s["suggested_value"])
+        except Exception:
+            return
+            
+        from database.clinical import create_provider
+        create_provider(
+            conn, 
+            patient_id, 
+            name=val_obj.get("name", "Unknown Provider"),
+            specialty=val_obj.get("specialty"),
+            clinic=val_obj.get("clinic"),
+            phone=val_obj.get("phone"),
+            fax=val_obj.get("fax"),
+            address=val_obj.get("address")
+        )
+        return
+
+    if s["field_key"] in ("vitals.list", "lab_results.list"):
+        doc_id = s.get("doc_id")
+        report_id = None
+        cur = conn.cursor()
+        if doc_id:
+            cur.execute("SELECT id FROM lab_reports WHERE source_document_id = ? AND patient_id = ?", (doc_id, patient_id))
+            r = cur.fetchone()
+            if r:
+                report_id = r[0]
+                
+        from database.clinical import create_lab_report, add_lab_result
+        if not report_id:
+            import datetime
+            today = datetime.date.today().isoformat()
+            report_id = create_lab_report(conn, patient_id, source_document_id=doc_id, collected_date=today, reported_date=today, notes="AI Extracted")
+            
+        try:
+            val_obj = json.loads(s["suggested_value"])
+        except Exception:
+            return
+            
+        def _parse_value_num(t):
+            if not t: return None
+            t = str(t).strip()
+            if any(sym in t for sym in ("<", ">", "<=", ">=")): return None
+            import re
+            m = re.search(r"[-+]?\d[\d,]*\.?\d*", t)
+            if not m: return None
+            try: return float(m.group(0).replace(",", ""))
+            except: return None
+            
+        value_text = str(val_obj.get("value") or val_obj.get("value_text", "")).strip()
+        category = "Vitals" if s["field_key"] == "vitals.list" else "Lab"
+        
+        add_lab_result(
+            conn,
+            patient_id,
+            report_id,
+            test_name=val_obj.get("name", "Unknown"),
+            value_text=value_text,
+            value_num=_parse_value_num(value_text),
+            unit=val_obj.get("unit"),
+            abnormal_flag=val_obj.get("abnormal_flag"),
+            result_date=val_obj.get("date"),
+            category=category
+        )
+        return
+
     # Map simple AI field keys into structured JSON list targets
     key_map = {
         "condition.name": ("conditions.list", "name"),
@@ -151,7 +219,7 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
     
     dlg = ft.AlertDialog(
         modal=True,
-        title=ft.Text("Review AI Extraction Suggestions", weight="bold"),
+        title=ft.Text("Review Extraction Suggestions", weight="bold"),
         content=ft.Container(
             width=600,
             height=400,
