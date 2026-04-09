@@ -365,7 +365,7 @@ def get_documents_view(page: ft.Page):
             with open(enc_path, "wb") as f:
                 f.write(ciphertext)
 
-            add_document(
+            doc_id = add_document(
                 page.db_connection,
                 patient_id,
                 file_name,     # human label
@@ -376,7 +376,9 @@ def get_documents_view(page: ft.Page):
             refresh_table(search_field.value, update_ui=True)
             show_snack(page, "Document uploaded securely.", "blue")
 
-            # Run ingestion in background
+            # Run ingestion + candidate matching in background
+            _uploaded_doc_id = doc_id
+            _uploaded_file_name = file_name
             def _ingest():
                 try:
                     run_ingestion(
@@ -403,9 +405,34 @@ def get_documents_view(page: ft.Page):
                                 page.content_area.update()
                         except Exception as refresh_ex:
                             print(f"Auto-refresh failed: {refresh_ex}")
-                            
+
                 except Exception as ex:
                     print(f"Ingestion error: {ex}")
+
+                # ── Candidate matching for records requests ───────────────────
+                try:
+                    from database.records_requests import check_upload_for_matches
+                    cur = page.db_connection.cursor()
+                    cur.execute(
+                        "SELECT parsed_text FROM documents WHERE id=?",
+                        (_uploaded_doc_id,),
+                    )
+                    row = cur.fetchone()
+                    parsed_text = row[0] if row else None
+                    matched = check_upload_for_matches(
+                        page.db_connection,
+                        patient_id,
+                        doc_id=_uploaded_doc_id,
+                        file_name=_uploaded_file_name,
+                        parsed_text=parsed_text,
+                    )
+                    if matched and hasattr(page, "_refresh_requests_panel"):
+                        try:
+                            page._refresh_requests_panel()
+                        except Exception:
+                            pass
+                except Exception as match_ex:
+                    print(f"Candidate match error: {match_ex}")
 
             threading.Thread(target=_ingest, daemon=True).start()
 

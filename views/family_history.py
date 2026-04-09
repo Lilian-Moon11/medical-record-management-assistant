@@ -550,16 +550,6 @@ def _open_detail_for(page: ft.Page, relation: str, display_name: str, entries: l
 
     page._fh_detail_rebuild()
 
-    # If there's a "related to" connection, append it to the list col as read-only info
-    if rt_type and rt_name:
-        page._fh_detail_conds_col.controls.append(
-            ft.Row([
-                ft.Icon(ft.Icons.LINK, size=10, color=ft.Colors.BLUE_400),
-                ft.Text(f"{title_text} is a {rt_type} {rt_name}",
-                        size=11, italic=True, color=ft.Colors.BLUE_300),
-            ], spacing=4)
-        )
-
     dlg.open = True
     page.update()
 

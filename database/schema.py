@@ -33,6 +33,25 @@ def _ensure_schema(conn):
     cur.execute("CREATE TABLE IF NOT EXISTS lab_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id INTEGER NOT NULL, source_document_id INTEGER, collected_date TEXT, reported_date TEXT, ordering_provider TEXT, facility TEXT, notes TEXT, created_at TEXT, updated_at TEXT, FOREIGN KEY(patient_id) REFERENCES patients(id), FOREIGN KEY(source_document_id) REFERENCES documents(id))")
     cur.execute("CREATE TABLE IF NOT EXISTS lab_results (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id INTEGER NOT NULL, report_id INTEGER NOT NULL, test_name TEXT NOT NULL, value_text TEXT NOT NULL, value_num REAL, unit TEXT, ref_range_text TEXT, ref_low REAL, ref_high REAL, ref_unit TEXT, abnormal_flag TEXT, result_date TEXT, notes TEXT, created_at TEXT, updated_at TEXT, FOREIGN KEY(patient_id) REFERENCES patients(id), FOREIGN KEY(report_id) REFERENCES lab_reports(id))")
 
+    # ── Records Request Tracker ───────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS records_requests (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id       INTEGER NOT NULL,
+            provider_name    TEXT NOT NULL,
+            department       TEXT,
+            date_requested   TEXT NOT NULL,
+            due_date         TEXT,
+            due_date_source  TEXT DEFAULT 'default',
+            status           TEXT DEFAULT 'pending',
+            candidate_doc_id INTEGER,
+            notes            TEXT,
+            created_at       TEXT,
+            FOREIGN KEY(patient_id)       REFERENCES patients(id),
+            FOREIGN KEY(candidate_doc_id) REFERENCES documents(id)
+        )
+    """)
+
     # ── Phase 5.0: AI document chunks ─────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS document_chunks (
@@ -77,6 +96,7 @@ def _ensure_schema(conn):
         "ALTER TABLE documents ADD COLUMN visit_date TEXT",
         "ALTER TABLE documents ADD COLUMN specialty TEXT",
         "ALTER TABLE lab_results ADD COLUMN category TEXT DEFAULT 'Lab'",
+        "ALTER TABLE records_requests ADD COLUMN source_doc_id INTEGER",
     ):
         try:
             cur.execute(col_sql)

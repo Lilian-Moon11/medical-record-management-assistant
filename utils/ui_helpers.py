@@ -146,14 +146,29 @@ def themed_panel(page: ft.Page, content, padding=None, radius=6):
         padding = pt_scale(page, 15)
 
     if hc:
-        if isinstance(content, ft.Text) and content.color is None:
-            content.color = ft.Colors.YELLOW
+        # Determine current effective theme
+        theme_mode = getattr(page, "theme_mode", ft.ThemeMode.SYSTEM)
+        is_dark = (
+            theme_mode == ft.ThemeMode.DARK
+            or (theme_mode == ft.ThemeMode.SYSTEM and getattr(page, "_system_is_dark", True))
+        )
+
+        if is_dark:
+            bg = ft.Colors.BLACK
+            border_color = ft.Colors.YELLOW
+            if isinstance(content, ft.Text) and content.color is None:
+                content.color = ft.Colors.YELLOW
+        else:
+            bg = ft.Colors.WHITE
+            border_color = ft.Colors.BLACK
+            if isinstance(content, ft.Text) and content.color is None:
+                content.color = ft.Colors.BLACK
 
         return ft.Container(
             content=content,
             padding=padding,
-            bgcolor=ft.Colors.BLACK,
-            border=ft.Border.all(2, ft.Colors.YELLOW),
+            bgcolor=bg,
+            border=ft.Border.all(2, border_color),
             border_radius=radius,
         )
 
@@ -165,6 +180,7 @@ def themed_panel(page: ft.Page, content, padding=None, radius=6):
         if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
         border_radius=radius,
     )
+
 
 def make_eye_btn(page: ft.Page, revealed: bool, visible: bool = True) -> "ft.IconButton":
     return ft.IconButton(

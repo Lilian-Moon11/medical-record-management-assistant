@@ -53,35 +53,90 @@ def apply_settings(page, *, get_view_for_index):
     try:
         theme_pref = get_setting(page.db_connection, "ui.theme", "system")
         high_contrast = get_setting(page.db_connection, "ui.high_contrast", "0") == "1"
-        large_text = get_setting(page.db_connection, "ui.large_text", "0") == "1"
+        # Large text: stored as float string e.g. "1.0", "1.25"; legacy "0"/"1" handled
+        _lt_raw = get_setting(page.db_connection, "ui.large_text", "1.0")
+        try:
+            _lt_scale = float(_lt_raw)
+            # Legacy: "0" -> 1.0, "1" -> 1.25
+            if _lt_scale == 0.0:
+                _lt_scale = 1.0
+            elif _lt_scale == 1.0 and _lt_raw == "1":
+                _lt_scale = 1.25
+        except ValueError:
+            _lt_scale = 1.0
+        page.ui_scale = _lt_scale
 
-        page.theme_mode = {
-            "dark": ft.ThemeMode.DARK,
-            "light": ft.ThemeMode.LIGHT,
-            "system": ft.ThemeMode.SYSTEM,
-        }.get(theme_pref, ft.ThemeMode.SYSTEM)
-
+        # High contrast overrides theme_mode to always use dark (black bg + bright text).
+        # When HC is off, honour the user's selected theme.
         if high_contrast:
-            page.theme = ft.Theme(color_scheme_seed=ft.Colors.YELLOW)
+            page.theme_mode = ft.ThemeMode.DARK
+            page.bgcolor = "#000000"
+
+            _hc_scheme = ft.ColorScheme(
+                primary="#FFE633",
+                on_primary="#000000",
+                secondary="#FFE633",
+                on_secondary="#000000",
+                primary_container="#2a2600",
+                on_primary_container="#FFE633",
+                surface="#111111",
+                on_surface="#FFFFFF",
+                on_surface_variant="#DDDDDD",
+                surface_container="#111111",
+                surface_container_high="#1a1a1a",
+                surface_container_highest="#222222",
+                surface_container_low="#0a0a0a",
+                surface_container_lowest="#000000",
+                outline="#FFFFFF",
+                outline_variant="#555555",
+                error="#FF6B6B",
+                on_error="#000000",
+            )
+            _hc_theme = ft.Theme(
+                color_scheme=_hc_scheme,
+                text_theme=ft.TextTheme(
+                    body_large=ft.TextStyle(color="#FFFFFF"),
+                    body_medium=ft.TextStyle(color="#FFFFFF"),
+                    body_small=ft.TextStyle(color="#DDDDDD"),
+                    label_large=ft.TextStyle(color="#FFFFFF"),
+                    label_medium=ft.TextStyle(color="#FFFFFF"),
+                    title_large=ft.TextStyle(color="#FFE633"),
+                    title_medium=ft.TextStyle(color="#FFE633"),
+                    headline_medium=ft.TextStyle(color="#FFE633"),
+                ),
+            )
+            page.theme = _hc_theme
+            page.dark_theme = _hc_theme
         else:
+            page.theme_mode = {
+                "dark": ft.ThemeMode.DARK,
+                "light": ft.ThemeMode.LIGHT,
+                "system": ft.ThemeMode.SYSTEM,
+            }.get(theme_pref, ft.ThemeMode.SYSTEM)
+            page.bgcolor = None
             page.theme = None
+            page.dark_theme = None
 
         page.is_high_contrast = high_contrast
-        page.ui_scale = 1.25 if large_text else 1.0
 
         # Provenance columns in Health Record / Labs / Providers
         page._show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
         page._show_updated = get_setting(page.db_connection, "ui.show_updated", "0") == "1"
 
-        # Refresh UI if dashboard exists
+        # Flush page-level changes (theme_mode, bgcolor, theme) first.
+        page.update()
+
+        # Rebuild the current view so scale/source/updated columns reflect new state.
         if getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
             idx = page.nav_rail.selected_index
             page.content_area.content = get_view_for_index(idx)
             page.content_area.update()
 
-        page.update()
     except Exception as e:
-        print(f"Settings Error: {e}")
+        import traceback
+        print(f"[apply_settings] Error: {e}\n{traceback.format_exc()}")
+
+
 
 
 def make_get_view_for_index(page, *, apply_settings_callback):

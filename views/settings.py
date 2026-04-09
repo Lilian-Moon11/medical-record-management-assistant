@@ -86,7 +86,16 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
     is_high_contrast = get_setting(page.db_connection, "ui.high_contrast", "0") == "1"
 
-    is_large_text = get_setting(page.db_connection, "ui.large_text", "0") == "1"
+    # Large text: float scale value 1.0–1.5 (legacy "0"/"1" treated as 1.0/1.25)
+    _lt_raw = get_setting(page.db_connection, "ui.large_text", "1.0")
+    try:
+        _lt_scale_val = float(_lt_raw)
+        if _lt_scale_val == 0.0:
+            _lt_scale_val = 1.0
+        elif _lt_scale_val == 1.0 and _lt_raw == "1":
+            _lt_scale_val = 1.25
+    except ValueError:
+        _lt_scale_val = 1.0
 
     is_show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
 
@@ -180,79 +189,89 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
     # 2. Define Controls
 
+    # ── Per-control auto-save handlers ───────────────────────────────────────
+    # Defined BEFORE each control so on_change is passed in the constructor
+    # (Flet post-assignment of on_change is unreliable in some versions).
+
+    def _save_theme(e):
+        val = theme_dd.value or "system"
+        set_setting(page.db_connection, "ui.theme", val)
+        page.theme_mode = {
+            "dark": ft.ThemeMode.DARK,
+            "light": ft.ThemeMode.LIGHT,
+            "system": ft.ThemeMode.SYSTEM,
+        }.get(val, ft.ThemeMode.SYSTEM)
+        apply_settings_callback()
+        show_snack(page, "Theme saved.", ft.Colors.GREEN)
+
     theme_dd = ft.Dropdown(
-
         label="Theme",
-
         width=300,
-
         options=[
-
             ft.dropdown.Option("system", "System default"),
-
             ft.dropdown.Option("light", "Light"),
-
             ft.dropdown.Option("dark", "Dark"),
-
         ],
-
         value=current_theme,
+    )
+    theme_save_btn = ft.IconButton(
+        icon=ft.Icons.SAVE,
+        tooltip="Save theme",
+        on_click=_save_theme,
+    )
 
+    def _save_hc(e):
+        val = e.control.value
+        set_setting(page.db_connection, "ui.high_contrast", "1" if val else "0")
+        apply_settings_callback()
+
+    hc_switch = ft.Switch(label="High contrast", value=is_high_contrast, on_change=_save_hc)
+
+    # ── Text scale slider ────────────────────────────────────────────────────
+    _scale_label = ft.Text(
+        f"Text Scale: {_lt_scale_val:.0%}",
+        size=pt_scale(page, 14),
+    )
+
+    def _save_scale(e):
+        val = e.control.value
+        set_setting(page.db_connection, "ui.large_text", str(round(val, 2)))
+        _scale_label.value = f"Text Scale: {val:.0%}"
+        try:
+            _scale_label.update()
+        except Exception:
+            pass
+        apply_settings_callback()
+
+    # on_change already wired above via _save_theme / _save_hc
+
+    lt_slider = ft.Slider(
+        min=1.0,
+        max=1.5,
+        divisions=10,
+        value=_lt_scale_val,
+        label="{value:.2f}x",
+        width=300,
+        on_change=_save_scale,
     )
 
 
 
-    hc_switch = ft.Switch(label="High contrast", value=is_high_contrast)
-
-    lt_switch = ft.Switch(label="Large text", value=is_large_text)
-
-
-
     def _auto_save_source(e):
-
-        set_setting(page.db_connection, "ui.show_source", "1" if source_cb.value else "0")
-
+        set_setting(page.db_connection, "ui.show_source", "1" if e.control.value else "0")
         apply_settings_callback()
-
-
-
-    def _auto_save_updated(e):
-
-        set_setting(page.db_connection, "ui.show_updated", "1" if updated_cb.value else "0")
-
-        apply_settings_callback()
-
-
 
     source_cb = ft.Checkbox(label="Show source of information", value=is_show_source, on_change=_auto_save_source)
+
+    def _auto_save_updated(e):
+        set_setting(page.db_connection, "ui.show_updated", "1" if e.control.value else "0")
+        apply_settings_callback()
 
     updated_cb = ft.Checkbox(label="Show updated date", value=is_show_updated, on_change=_auto_save_updated)
 
 
 
-    # 3. Logic: Save and Apply
-
-    def save_settings(e):
-
-        # Save to DB
-
-        set_setting(page.db_connection, "ui.theme", theme_dd.value)
-
-        set_setting(page.db_connection, "ui.high_contrast", "1" if hc_switch.value else "0")
-
-        set_setting(page.db_connection, "ui.large_text", "1" if lt_switch.value else "0")
-
-        
-
-        # Trigger the visual update in main.py
-
-        apply_settings_callback()
-
-        
-
-        show_snack(page, "Settings saved.", ft.Colors.GREEN)
-
-
+    # 3. Logic: Restore defaults only
 
     def reset_settings(e):
 
@@ -262,7 +281,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
         set_setting(page.db_connection, "ui.high_contrast", "0")
 
-        set_setting(page.db_connection, "ui.large_text", "0")
+        set_setting(page.db_connection, "ui.large_text", "1.0")
 
         set_setting(page.db_connection, "ui.show_source", "0")
 
@@ -276,7 +295,8 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
         hc_switch.value = False
 
-        lt_switch.value = False
+        lt_slider.value = 1.0
+        _scale_label.value = "Text Scale: 100%"
 
         source_cb.value = False
 
@@ -946,16 +966,19 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     ]
                 ),
                 ft.Divider(),
-                theme_dd,
+                ft.Row([
+                    theme_dd,
+                    theme_save_btn,
+                ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
                 hc_switch,
-                lt_switch,
+                _scale_label,
+                lt_slider,
                 ft.Row([
                     source_cb,
                     updated_cb,
                 ]),
                 ft.Row([
-                    ft.Button("Save App Settings", icon=ft.Icons.SAVE, on_click=save_settings),
-                    ft.Button("Restore Defaults", on_click=reset_settings),
+                    ft.Button("Restore Defaults", icon=ft.Icons.RESTORE, on_click=reset_settings),
                 ]),
                 ft.Divider(),
                 ft.Text("Recovery Key", size=pt_scale(page, 18), weight="bold"),

@@ -42,6 +42,8 @@ from PyPDFForm import PdfWrapper
 from ai.paperwork import map_pdf_fields
 from ai.paperwork_overlay import fill_static_pdf
 from database.clinical import list_providers
+from database.records_requests import create_request as create_records_request
+from utils.roi_parser import parse_due_date_from_text
 from utils.ui_helpers import pt_scale, show_snack
 from PIL import Image, ImageDraw
 import io
@@ -192,6 +194,7 @@ class PaperworkWizard:
 
         self.check_accessible = ft.Checkbox(label="Accessible Copy (Editable)", value=True)
         self.check_flattened = ft.Checkbox(label="Flattened Copy (Print/Fax)", value=False)
+        self._last_archived_doc_id: int | None = None  # set when form is saved to records
 
         # 1. SIGN DATE & MANUAL INPUTS
         self.step = 1
@@ -506,7 +509,7 @@ class PaperworkWizard:
                 self.content_area.controls.clear()
                 self.content_area.controls.extend([
                     ft.Text(
-                        "This PDF does not have fillable fields. The app can still "
+                        "This PDF does not have fillable fields. An accessible copy cannot be generated for this document.The app can still "
                         "try to place your information by reading the visible labels, "
                         "but the result may need manual corrections.",
                         size=pt_scale(self.page, 13),
@@ -678,6 +681,7 @@ class PaperworkWizard:
                                 (self.patient_id, doc_id, str(doc_id), display_name)
                             )
                             self.page.db_connection.commit()
+                            self._last_archived_doc_id = doc_id
                         except Exception as arc_ex:
                             print(f"Static archive error: {arc_ex}")
 
@@ -688,6 +692,10 @@ class PaperworkWizard:
                     )
                     if os.name == "nt":
                         os.startfile(static_out)
+
+                    # Records Request Tracker hook (ROI only)
+                    if self.selected_type == "roi":
+                        self._create_roi_records_request(template_data, self._last_archived_doc_id)
 
                     self.close()
                     if sig_path and os.path.exists(sig_path):
@@ -890,6 +898,7 @@ class PaperworkWizard:
                         (self.patient_id, doc_id, str(doc_id), display_name)
                     )
                     self.page.db_connection.commit()
+                    self._last_archived_doc_id = doc_id
                     show_snack(self.page, "Form securely archived.", "blue")
                 except Exception as db_ex:
                     print(f"Archive Error: {db_ex}")
@@ -905,6 +914,10 @@ class PaperworkWizard:
             else:
                 show_snack(self.page, "No output versions selected.", "orange")
 
+            # --- 7. Records Request Tracker hook (ROI only) ---
+            if self.selected_type == "roi":
+                self._create_roi_records_request(template_data, self._last_archived_doc_id)
+
             self.close()
 
             if sig_path and os.path.exists(sig_path):
@@ -916,6 +929,66 @@ class PaperworkWizard:
             self.next_btn.disabled = False
             self.next_btn.text = "Generate & Save"
             self.page.update()
+
+    def _create_roi_records_request(self, template_bytes: bytes, source_doc_id: int | None = None) -> None:
+        """Create a pending records request after a successful ROI completion.
+
+        Extracts the provider name from the 'Records From' dropdown selection,
+        parses a due date from the template text (or falls back to 30 days),
+        and inserts a row into records_requests.
+        """
+        try:
+            # Resolve provider name from the wizard dropdown
+            provider_name = ""
+            department: str | None = None
+            from_key = self.prov_from_dropdown.value
+            if from_key:
+                provs = list_providers(self.page.db_connection, self.patient_id)
+                prov = next((p for p in provs if str(p[0]) == from_key), None)
+                if prov:
+                    # provider tuple: (id, name, specialty, clinic, phone, fax, email, address, ...)
+                    provider_name = (prov[1] or "").strip()
+                    department = (prov[3] or "").strip() or None  # clinic as department
+
+            if not provider_name:
+                provider_name = "Unknown Provider"
+
+            # Parse due date from template text (lightweight regex, no LLM)
+            try:
+                import pdfplumber
+                text = ""
+                import io as _io
+                with pdfplumber.open(_io.BytesIO(template_bytes)) as pdf:
+                    for pg in pdf.pages:
+                        text += (pg.extract_text() or "")
+            except Exception:
+                text = ""
+
+            today = datetime.today()
+            due_date, due_source = parse_due_date_from_text(text, request_date=today)
+            date_requested = today.strftime("%Y-%m-%d")
+
+            create_records_request(
+                self.page.db_connection,
+                self.patient_id,
+                provider_name,
+                department,
+                date_requested,
+                due_date,
+                due_source,
+                notes=None,
+                source_doc_id=source_doc_id,
+            )
+
+            # Refresh the Overview panel if it is currently visible
+            if hasattr(self.page, "_refresh_requests_panel"):
+                try:
+                    self.page._refresh_requests_panel()
+                except Exception:
+                    pass
+        except Exception as ex:
+            # Non-critical: log but don't surface to the user
+            print(f"Records request hook error: {ex}")
 
     def _show_ai_loading_ui(self):
         """Swap the dialog content for an AI-loading state with an expansion panel."""
