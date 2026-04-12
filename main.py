@@ -46,6 +46,29 @@ from ui import routing, navigation, dialogs, login
 
 import glob
 import tempfile
+import logging
+from logging.handlers import RotatingFileHandler
+
+def setup_global_logging():
+    log_dir = paths.app_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "mrma.log"
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"),
+            logging.StreamHandler()
+        ]
+    )
+
+    # Silence noisy downstream libraries (especially the harmless WinError 10054 in asyncio)
+    logging.getLogger("flet").setLevel(logging.WARNING)
+    logging.getLogger("flet_core").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
+setup_global_logging()
 
 def cleanup_decrypted_temp_files():
     try:
@@ -58,6 +81,9 @@ def cleanup_decrypted_temp_files():
                 pass
     except Exception:
         pass
+
+import atexit
+atexit.register(cleanup_decrypted_temp_files)
 
 def main(page: ft.Page):
     # Aggressively wipe legacy temporary files on boot

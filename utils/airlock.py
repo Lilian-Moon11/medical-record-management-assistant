@@ -103,8 +103,16 @@ def export_profile(conn, dmk_raw: bytes, data_dir: str,
                  "abnormal_flag, result_date, notes, created_at, updated_at "
                  "FROM lab_results"),
         "documents": _fetch_all_as_dicts(
-            cur, "SELECT id, patient_id, file_name, file_path, parsed_text, "
+            cur, "SELECT id, patient_id, file_name, file_path, "
                  "upload_date FROM documents"),
+        "records_requests": _fetch_all_as_dicts(
+            cur, "SELECT id, patient_id, provider_name, department, date_requested, "
+                 "due_date, due_date_source, status, candidate_doc_id, notes, "
+                 "created_at, source_doc_id FROM records_requests"),
+        "ai_extraction_inbox": _fetch_all_as_dicts(
+            cur, "SELECT id, patient_id, doc_id, field_key, suggested_value, "
+                 "confidence, source_file_name, conflict, existing_value, status "
+                 "FROM ai_extraction_inbox"),
         "files": [],   # filled below
     }
 
@@ -203,6 +211,8 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
             "lab_reports": 0,
             "lab_results": 0,
             "documents": 0,
+            "records_requests": 0,
+            "ai_extraction_inbox": 0,
             "files": 0,
         }
 
@@ -337,13 +347,53 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
 
             cur.execute(
                 "INSERT INTO documents "
-                "(patient_id, file_name, file_path, parsed_text, upload_date) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(patient_id, file_name, file_path, upload_date) "
+                "VALUES (?, ?, ?, ?)",
                 (new_pid, doc.get("file_name"), rel_path,
-                 doc.get("parsed_text"), doc.get("upload_date", now)),
+                 doc.get("upload_date", now)),
             )
             doc_id_map[old_id] = cur.lastrowid
             counts["documents"] += 1
+
+        # ── records_requests ──
+        for rr in manifest.get("records_requests", []):
+            new_pid = patient_id_map.get(rr["patient_id"])
+            if new_pid is None:
+                continue
+            
+            # Map doc IDs if present
+            new_candidate_id = doc_id_map.get(rr.get("candidate_doc_id")) if rr.get("candidate_doc_id") else None
+            new_source_id = doc_id_map.get(rr.get("source_doc_id")) if rr.get("source_doc_id") else None
+
+            cur.execute(
+                "INSERT INTO records_requests "
+                "(patient_id, provider_name, department, date_requested, due_date, "
+                "due_date_source, status, candidate_doc_id, notes, created_at, source_doc_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_pid, rr.get("provider_name"), rr.get("department"), rr.get("date_requested"),
+                 rr.get("due_date"), rr.get("due_date_source", "default"), rr.get("status", "pending"),
+                 new_candidate_id, rr.get("notes"), rr.get("created_at", now), new_source_id),
+            )
+            counts["records_requests"] += 1
+
+        # ── ai_extraction_inbox ──
+        for ai in manifest.get("ai_extraction_inbox", []):
+            new_pid = patient_id_map.get(ai["patient_id"])
+            if new_pid is None:
+                continue
+            
+            new_doc_id = doc_id_map.get(ai.get("doc_id")) if ai.get("doc_id") else None
+
+            cur.execute(
+                "INSERT INTO ai_extraction_inbox "
+                "(patient_id, doc_id, field_key, suggested_value, confidence, "
+                "source_file_name, conflict, existing_value, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_pid, new_doc_id, ai.get("field_key"), ai.get("suggested_value"),
+                 ai.get("confidence"), ai.get("source_file_name"), ai.get("conflict", 0),
+                 ai.get("existing_value"), ai.get("status", "pending")),
+            )
+            counts["ai_extraction_inbox"] += 1
 
         # ── fix up lab_reports.source_document_id ──
         for lr in manifest.get("lab_reports", []):

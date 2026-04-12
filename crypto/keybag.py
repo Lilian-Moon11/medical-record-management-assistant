@@ -219,7 +219,7 @@ def rotate_recovery_key_with_old(
     Rotate recovery key AFTER proving you have the old recovery key.
     Returns new recovery key (base64).
     """
-    # This verifies the old key is valid (and also proves you’re allowed to rotate)
+    # This verifies the old key is valid (and also proves you're allowed to rotate)
     _ = unlock_db_key_with_recovery(db_path, old_recovery_key_b64)
 
     return rotate_recovery_key(db_path, dmk_raw)

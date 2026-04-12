@@ -310,6 +310,7 @@ class ListEditorBody(ft.Column):
                         from crypto.file_crypto import (
                             get_or_create_file_master_key, decrypt_bytes,
                         )
+                        from utils.open_file import open_file_cross_platform
                         try:
                             cur = self._page.db_connection.cursor()
                             cur.execute(
@@ -336,7 +337,7 @@ class ListEditorBody(ft.Column):
                             )
                             with open(tmp, "wb") as f:
                                 f.write(plaintext)
-                            os.startfile(tmp)
+                            open_file_cross_platform(tmp)
                             show_snack(self._page, f"Opened {fname}", "blue")
                         except Exception as ex:
                             show_snack(self._page, f"Open failed: {ex}", "red")

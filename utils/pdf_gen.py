@@ -161,6 +161,7 @@ def generate_summary_pdf(db_conn, patient_id, options=None):
     if options.get('notes', True):
         pdf.multi_cell(0, 8, f"General Notes: {profile[3] or ''}")
     
-    filename = f"Medical_Summary_{patient_id}.pdf"
+    import tempfile
+    filename = os.path.join(tempfile.gettempdir(), f"Medical_Summary_{patient_id}.pdf")
     pdf.output(filename)
     return os.path.abspath(filename)

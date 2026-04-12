@@ -1,4 +1,4 @@
-﻿# Copyright (C) 2026 Lilian-Moon11
+# Copyright (C) 2026 Lilian-Moon11
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import threading
 
 from sqlcipher3 import dbapi2 as sqlite3
 
@@ -37,6 +38,47 @@ def _sqlcipher_set_key(cursor, db_key_raw: bytes) -> None:
     cursor.execute(f"PRAGMA key = \"x'{hexkey}'\";")
 
 
+class ThreadSafeCursor:
+    def __init__(self, raw_cursor, lock):
+        self._cur = raw_cursor
+        self._lock = lock
+    
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        with self._lock:
+            return next(self._cur)
+    
+    def __getattr__(self, name):
+        attr = getattr(self._cur, name)
+        if callable(attr):
+            def wrapper(*args, **kwargs):
+                with self._lock:
+                    return attr(*args, **kwargs)
+            return wrapper
+        return attr
+
+class ThreadSafeConnection:
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+        self._lock = threading.RLock()
+
+    def cursor(self, *args, **kwargs):
+        with self._lock:
+            raw_cur = self._conn.cursor(*args, **kwargs)
+        return ThreadSafeCursor(raw_cur, self._lock)
+    
+    def __getattr__(self, name):
+        attr = getattr(self._conn, name)
+        if callable(attr):
+            def wrapper(*args, **kwargs):
+                with self._lock:
+                    return attr(*args, **kwargs)
+            return wrapper
+        return attr
+
+
 def init_db_with_db_key(db_key_raw: bytes):
     """Open the SQLCipher database with a raw key and ensure the schema exists."""
     conn = sqlite3.connect(str(paths.db_path), check_same_thread=False)
@@ -49,7 +91,7 @@ def init_db_with_db_key(db_key_raw: bytes):
         raise ValueError("Invalid DB key or corrupted database.")
     from .schema import _ensure_schema
     _ensure_schema(conn)
-    return conn
+    return ThreadSafeConnection(conn)
 
 
 def open_or_create_vault(password: str):

@@ -35,6 +35,7 @@ import asyncio
 import tempfile
 import threading
 from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes, decrypt_bytes
+from utils.open_file import open_file_cross_platform
 from datetime import datetime
 from ai.ingestion import run_ingestion
 from core import paths
@@ -43,7 +44,6 @@ from database import (
     get_patient_documents,
     add_document,
     delete_document,
-    get_document_path,
 )
 from utils.ui_helpers import pt_scale, show_snack, make_info_button
 
@@ -93,19 +93,7 @@ def get_documents_view(page: ft.Page):
 
         # Perform delete synchronously so the table refreshes right away
         try:
-            file_path = get_document_path(page.db_connection, int(doc_id))
-
-            if isinstance(file_path, (tuple, list)):
-                file_path = file_path[1] if file_path else None
-
             delete_document(page.db_connection, int(doc_id))
-
-            if file_path and os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception as ex:
-                    print(f"Could not delete file {file_path}: {ex}")
-                    show_snack(page, "Deleted record, but file could not be removed.", "orange")
 
             if getattr(page, "content_area", None):
                 page.content_area.content = get_documents_view(page)
@@ -202,7 +190,7 @@ def get_documents_view(page: ft.Page):
             with open(tmp_path, "wb") as f:
                 f.write(plaintext)
 
-            os.startfile(tmp_path)
+            open_file_cross_platform(tmp_path)
 
             show_snack(page, "Opened a temporary decrypted copy (will be cleaned up later).", "orange")
         except Exception as ex:

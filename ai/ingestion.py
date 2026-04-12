@@ -206,8 +206,8 @@ def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str, lis
 
 
 
-def _get_unindexed_docs(conn, patient_id: int) -> list[dict]:
-    """Return documents that have no rows in ai_extraction_inbox yet."""
+def _get_unprocessed_docs(conn, patient_id: int) -> list[dict]:
+    """Return documents that have not yet fully completed AI extraction."""
     cur = conn.cursor()
     cur.execute(
         """
@@ -215,7 +215,8 @@ def _get_unindexed_docs(conn, patient_id: int) -> list[dict]:
         FROM documents d
         WHERE d.patient_id = ?
           AND NOT EXISTS (
-              SELECT 1 FROM ai_extraction_inbox c WHERE c.doc_id = d.id
+              SELECT 1 FROM ai_extraction_inbox c 
+              WHERE c.doc_id = d.id AND c.field_key = 'system.processed'
           )
         """,
         (patient_id,),
@@ -292,7 +293,7 @@ def run_ingestion(
     if orphaned:
         logger.info("Cleaned up orphaned AI data from deleted documents")
 
-    docs = _get_unindexed_docs(conn, patient_id)
+    docs = _get_unprocessed_docs(conn, patient_id)
     total = len(docs)
 
     if not docs:
@@ -341,6 +342,16 @@ def run_ingestion(
 
         if not (stop_event and stop_event.is_set()):
             full_text = "\n".join(full_text_parts)
+
+            # Persist extracted text so check_upload_for_matches can use it
+            try:
+                conn.execute(
+                    "UPDATE documents SET parsed_text = ? WHERE id = ?",
+                    (full_text if full_text.strip() else None, doc["id"]),
+                )
+                conn.commit()
+            except Exception as pt_ex:
+                logger.warning("Failed to write parsed_text for doc %d: %s", doc["id"], pt_ex)
 
             # Insert quality warnings as special inbox entries so users see them
             _quality_warnings = []
@@ -422,7 +433,7 @@ Document:
                     logger.error("Extraction failed for doc %d: %s", doc["id"], ex)
 
         if not (stop_event and stop_event.is_set()):
-            # Always push a dummy processed record so _get_unindexed_docs stops fetching it
+            # Always push a dummy processed record so _get_unprocessed_docs stops fetching it
             conn.execute(
                 "INSERT OR IGNORE INTO ai_extraction_inbox (patient_id, doc_id, field_key, suggested_value, confidence, source_file_name, status) VALUES (?, ?, 'system.processed', ?, 1.0, ?, 'system')",
                 (patient_id, doc["id"], str(doc["id"]), file_name)

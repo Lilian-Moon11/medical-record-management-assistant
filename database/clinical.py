@@ -28,6 +28,7 @@
 #   lab_results before deleting the parent lab_reports row.
 # -----------------------------------------------------------------------------
 
+import os
 from datetime import datetime
 
 def _now_ts():
@@ -130,9 +131,11 @@ def update_lab_report(conn, patient_id, report_id, **kwargs):
 def delete_lab_report(conn, patient_id, report_id):
     cur = conn.cursor()
     cur.execute("DELETE FROM lab_results WHERE report_id = ? AND patient_id = ?", (report_id, patient_id))
+    results_deleted = cur.rowcount
     cur.execute("DELETE FROM lab_reports WHERE id = ? AND patient_id = ?", (report_id, patient_id))
+    report_deleted = cur.rowcount
     conn.commit()
-    return cur.rowcount
+    return results_deleted + report_deleted
 
 def add_lab_result(conn, patient_id, report_id, **kwargs):
     cur = conn.cursor()
@@ -220,11 +223,23 @@ def add_document(conn, patient_id, file_name, file_path, upload_date):
 
 def delete_document(conn, document_id):
     cur = conn.cursor()
+    # Fetch file_path before deleting the row so we can clean up the .enc file
+    cur.execute("SELECT file_path FROM documents WHERE id = ?", (document_id,))
+    row = cur.fetchone()
+    enc_path = row[0] if row else None
     # Cascade delete AI data so deleted files don't haunt the Chat Assistant
     cur.execute("DELETE FROM document_chunks WHERE doc_id = ?", (document_id,))
     cur.execute("DELETE FROM ai_extraction_inbox WHERE doc_id = ?", (document_id,))
     cur.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
+    # Remove encrypted file from disk
+    if enc_path:
+        try:
+            if os.path.exists(enc_path):
+                os.remove(enc_path)
+        except OSError as ex:
+            print(f"[delete_document] Could not remove {enc_path}: {ex}")
+
 
 def get_document_metadata(conn, document_id):
     cur = conn.cursor()

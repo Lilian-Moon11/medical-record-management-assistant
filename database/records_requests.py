@@ -19,7 +19,7 @@ from datetime import datetime
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 # ── Write operations ─────────────────────────────────────────────────────────

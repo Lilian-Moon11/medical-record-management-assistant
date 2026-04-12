@@ -50,6 +50,7 @@ from PIL import Image, ImageDraw
 import io
 from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes
 from database import add_document
+from utils.open_file import open_file_cross_platform
 
 # ---------------------------------------------------------------------------
 # Loading-screen tips — one random tip is shown per generation session,
@@ -667,8 +668,7 @@ class PaperworkWizard:
                     with open(static_out, "wb") as f:
                         f.write(static_bytes)
                     show_snack(self.page, "No fields matched. Blank draft saved to Downloads.", "orange")
-                    if os.name == "nt":
-                        os.startfile(static_out)
+                    open_file_cross_platform(static_out)
                     self.close()
                     if sig_path and os.path.exists(sig_path):
                         os.remove(sig_path)
@@ -726,8 +726,7 @@ class PaperworkWizard:
                         "Draft saved to Downloads. Please review before submitting.",
                         "orange",
                     )
-                    if os.name == "nt":
-                        os.startfile(static_out)
+                    open_file_cross_platform(static_out)
 
                     # Records Request Tracker hook (ROI only)
                     if self.selected_type == "roi":
@@ -943,8 +942,7 @@ class PaperworkWizard:
             # --- 6. Success & Cleanup ---
             if output_path:
                 show_snack(self.page, "PDF(s) generated in Downloads.", "green")
-                if os.name == 'nt':
-                    os.startfile(output_path)
+                open_file_cross_platform(output_path)
             elif self.save_to_db_check.value:
                 show_snack(self.page, "Form archived to Patient Records.", "green")
             else:

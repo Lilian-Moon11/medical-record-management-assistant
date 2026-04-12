@@ -185,10 +185,13 @@ def _inline_date_row(
                     ciphertext = _f.read()
                 plaintext = decrypt_bytes(fmk, ciphertext)
                 _, ext = _os.path.splitext(human_name)
-                tmp = tempfile.mktemp(suffix=ext or ".pdf")
-                with open(tmp, "wb") as _f:
-                    _f.write(plaintext)
-                _os.startfile(tmp)
+                fd, tmp = tempfile.mkstemp(suffix=ext or ".pdf")
+                try:
+                    _os.write(fd, plaintext)
+                finally:
+                    _os.close(fd)
+                from utils.open_file import open_file_cross_platform
+                open_file_cross_platform(tmp)
             except Exception as ex:
                 show_snack(page, f"Could not open document: {ex}", "red")
 
@@ -527,6 +530,7 @@ def get_overview_view(page: ft.Page):
             page._summary_options_dlg.open = False
             page.update()
             import os
+            from utils.open_file import open_file_cross_platform
             try:
                 opts = {
                     "insurance":  page._summary_opt_ins.value,
@@ -538,7 +542,7 @@ def get_overview_view(page: ft.Page):
                 }
                 path = generate_summary_pdf(page.db_connection, patient[0], options=opts)
                 show_snack(page, "PDF Generated!", "green")
-                os.startfile(path)
+                open_file_cross_platform(path)
             except Exception as ex:
                 show_snack(page, f"PDF Error: {ex}", "red")
 

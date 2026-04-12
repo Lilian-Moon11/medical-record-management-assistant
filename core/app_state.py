@@ -31,6 +31,8 @@
 
 from __future__ import annotations
 from typing import Optional, Any
+import os
+import shutil
 
 
 def init_page_state(page) -> None:
@@ -84,3 +86,36 @@ def is_unlocked(page) -> bool:
 def clear_unlocked_session(page) -> None:
     # Backwards-compatible alias for login.py
     clear_session(page)
+
+
+def wipe_local_data(page) -> None:
+    """Securely erase the local vault, encrypted documents, and AI data.
+
+    Intended for shared-device / library-mode cleanup. The caller is
+    expected to destroy the application window immediately after this
+    returns.
+    """
+    from core import paths  # local import to avoid circular deps
+
+    # 1. Close the DB connection and scrub in-memory secrets.
+    clear_session(page)
+
+    # 2. Remove vault database + keybag
+    for fp in (paths.db_path, paths.keybag_path):
+        try:
+            if fp.exists():
+                fp.unlink()
+        except OSError:
+            pass
+
+    # 3. Remove encrypted document storage
+    if paths.data_dir.exists():
+        shutil.rmtree(paths.data_dir, ignore_errors=True)
+
+    # 4. Remove AI artifacts (models, embeddings)
+    if paths.ai_dir.exists():
+        shutil.rmtree(paths.ai_dir, ignore_errors=True)
+
+    # 5. Remove exports
+    if paths.export_dir.exists():
+        shutil.rmtree(paths.export_dir, ignore_errors=True)

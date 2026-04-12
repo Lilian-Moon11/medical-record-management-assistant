@@ -97,6 +97,9 @@ def build_login_view(
 
             if recovery_key:
                 on_show_recovery(recovery_key)
+                # Wipe the sensitive key from page state now that the
+                # ceremony callback holds its own copy.
+                page.recovery_key_first_run = None
 
             # Load profile and proceed
             page.current_profile = get_profile(page.db_connection)
@@ -213,6 +216,7 @@ def build_login_view(
 
             if recovery_key:
                 on_show_recovery(recovery_key)
+                page.recovery_key_first_run = None
 
             page.current_profile = get_profile(page.db_connection)
 

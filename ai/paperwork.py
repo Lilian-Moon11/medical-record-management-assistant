@@ -487,6 +487,29 @@ def _safe_parse_dict(raw: str) -> dict:
     return {}
 
 
+def _resolve_boolean_field(field_name: str, patient_digest: str) -> bool:
+    """
+    Attempt to resolve a checkbox field using keyword matching against the patient digest.
+    Returns True if a probable match is found, otherwise False.
+    """
+    # Extract significant alphanumeric words from the field name
+    words = re.findall(r'[a-zA-Z0-9]+', field_name)
+    sig_words = [
+        w.lower() for w in words 
+        if len(w) > 3 and w.lower() not in {"check", "box", "true", "false", "yes", "no", "is", "has", "have", "do", "does"}
+    ]
+    
+    if not sig_words:
+        return False
+        
+    digest_lower = patient_digest.lower()
+    for w in sig_words:
+        if w in digest_lower:
+            return True
+            
+    return False
+
+
 def map_pdf_fields(
     db_conn,
     patient_id: int,
