@@ -31,11 +31,11 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller --clean build/lpa.spec
+        run: pyinstaller --clean build/mrma.spec
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lpa-${{ matrix.os }}
-          path: dist/lpa/
+          name: mrma-${{ matrix.os }}
+          path: dist/mrma/
           retention-days: 7

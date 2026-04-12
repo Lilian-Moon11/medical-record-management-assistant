@@ -7,27 +7,13 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
-# Collect all data files from Flet packages (includes the native Flutter desktop binary).
-_flet_datas = (
-    collect_data_files('flet')
-    + collect_data_files('flet_core')
-    + collect_data_files('flet_desktop')
-)
-
-# Resolve flet_desktop at spec-evaluation time (handles venv vs user-site installs)
-import flet_desktop as _fd
-import os as _os
-_flet_app_dir = _os.path.join(_os.path.dirname(_fd.__file__), "app", "flet")
+# Flet >=0.80 natively provides PyInstaller hooks, so we don't need manual dataset collection.
 
 a = Analysis(
     ['../main.py'],
     pathex=['..'],
     binaries=[],
-    datas=[
-        # Bundle the Flutter renderer + DLLs so the window renders correctly
-        (_flet_app_dir, "flet/app/flet"),
-        *_flet_datas,
-    ],
+    datas=[],
     hiddenimports=[
         # SQLCipher
         'sqlcipher3',
@@ -37,8 +23,6 @@ a = Analysis(
         'cryptography.hazmat.primitives.ciphers.aead',
         # Flet
         'flet',
-        'flet_core',
-        'flet_desktop',
         # llama-cpp (optional — only needed if model bundled)
         # 'llama_cpp',
         # platformdirs
