@@ -198,7 +198,7 @@ def get_documents_view(page: ft.Page):
             _, file_ext = os.path.splitext(human_name)
             if not file_ext: file_ext = ".pdf"
             tmp_dir = tempfile.gettempdir()
-            tmp_path = os.path.join(tmp_dir, f"lpa_decrypted_{patient_id}_{int(datetime.now().timestamp())}{file_ext}")
+            tmp_path = os.path.join(tmp_dir, f"mrma_decrypted_{patient_id}_{int(datetime.now().timestamp())}{file_ext}")
             with open(tmp_path, "wb") as f:
                 f.write(plaintext)
 
@@ -470,9 +470,8 @@ def get_documents_view(page: ft.Page):
 
     _info_btn = make_info_button(page, "Medical Records", [
         "Upload any medical document (PDF, image, etc.) using the \"Upload Document\" button.",
-        "After uploading, AI scans the document in the background. Once complete, an orange \"Review Suggestions\" button will appear on the Overview tab — tap it to review and accept extracted health data.",
+        "After uploading, the document is processed in the background. Once complete, an orange \"Review Suggestions\" button will appear on the Overview tab, click it to review and accept extracted health data.",
         "Click a column header (Upload Date, Visit Date, Specialty) to sort the table by that column. Click again to reverse the order.",
-        "Use the search bar to filter documents by file name.",
         "Documents are encrypted on your device. The Open button decrypts a temporary copy for viewing.",
     ])
 

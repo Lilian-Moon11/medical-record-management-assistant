@@ -52,7 +52,24 @@ def get_vaccines_view(page: ft.Page):
     patient_id = patient[0]
 
     vaccines = _load(page, patient_id)
-    vaccines.sort(key=lambda v: v.get("date", "") or "", reverse=True)
+
+    # ---- Sort state persisted on page (survives view rebuilds) ----
+    if not hasattr(page, "_vax_sort_col"):
+        page._vax_sort_col = 1   # default: Date
+    if not hasattr(page, "_vax_sort_asc"):
+        page._vax_sort_asc = False  # newest first
+
+    def _sort_key(v: dict):
+        col = page._vax_sort_col
+        if col == 0:   # Vaccine name
+            return str(v.get("vaccine", "") or "").lower()
+        elif col == 1: # Date
+            return str(v.get("date", "") or "")
+        elif col == 3: # Administered By
+            return str(v.get("administered_by", "") or "").lower()
+        return ""
+
+    vaccines.sort(key=_sort_key, reverse=not page._vax_sort_asc)
 
     # ── Shared detail/edit dialog ───────────────────────────────────────────
     _vac_name  = ft.TextField(label="Vaccine Name *", autofocus=True, expand=True)
@@ -185,16 +202,26 @@ def get_vaccines_view(page: ft.Page):
             ])
         )
 
+    def _on_sort(e: ft.DataColumnSortEvent):
+        if page._vax_sort_col == e.column_index:
+            page._vax_sort_asc = not page._vax_sort_asc
+        else:
+            page._vax_sort_col = e.column_index
+            page._vax_sort_asc = True
+        _refresh_view()
+
     table = ft.DataTable(
         columns=[
-            ft.DataColumn(ft.Text("Vaccine")),
-            ft.DataColumn(ft.Text("Date")),
+            ft.DataColumn(ft.Text("Vaccine"),         on_sort=_on_sort),
+            ft.DataColumn(ft.Text("Date"),             on_sort=_on_sort),
             ft.DataColumn(ft.Text("Lot #")),
-            ft.DataColumn(ft.Text("Administered By")),
+            ft.DataColumn(ft.Text("Administered By"),  on_sort=_on_sort),
             ft.DataColumn(ft.Text("Notes")),
             ft.DataColumn(ft.Text("Actions")),
         ],
         rows=rows,
+        sort_column_index=page._vax_sort_col,
+        sort_ascending=page._vax_sort_asc,
         border=ft.border.all(1, ft.Colors.GREY_400),
         vertical_lines=ft.border.BorderSide(1, ft.Colors.GREY_100),
     )

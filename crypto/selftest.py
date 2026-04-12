@@ -103,7 +103,7 @@ def run_crypto_self_test(
         # ---- FMK unwrap (DMK-wrapped model) + round-trip ----
         fmk = get_or_create_file_master_key(conn, dmk_raw=db_key_raw)
 
-        test_plain = b"lpa-selftest"
+        test_plain = b"mrma-selftest"
         ct = encrypt_bytes(fmk, test_plain)
         pt = decrypt_bytes(fmk, ct)
         if pt != test_plain:

@@ -36,6 +36,7 @@ import asyncio
 import flet as ft
 import flet.canvas as cv
 import os
+import random
 from datetime import datetime
 from PyPDFForm import PdfWrapper
 
@@ -49,6 +50,39 @@ from PIL import Image, ImageDraw
 import io
 from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes
 from database import add_document
+
+# ---------------------------------------------------------------------------
+# Loading-screen tips — one random tip is shown per generation session,
+# similar to video-game loading screens.
+# ---------------------------------------------------------------------------
+_LOADING_TIPS = [
+    # Overview
+    "Overview tab: Question marks in the top right of each tab offer information, suggestions, and a little appreciation as you navigate.",
+    "Overview tab: The Notes space is great for action items, things to bring up at your next appointment, or self affirmations. These notes can also be included in your summary PDF.",
+    "Overview tab: The Records Requests panel tracks your ROI follow-ups. A task is created automatically when you complete an ROI form. Click the due date to edit it inline.",
+    'Overview tab: The orange "Review Suggestions" button appears when new data has been extracted from an uploaded document. Click it to accept or dismiss each suggestion.',
+    'Overview tab: Use "Generate Summary" to export a customizable PDF of your health record to share with providers.',
+    # Health Record
+    'Health Record tab: The "Edit Visibility" button lets you mark sections as sensitive, adding eye icons that can be used to hide or reveal information.',
+    # Vitals & Labs
+    "Vitals & Labs tab: There are two sub-tabs: Vitals for daily measurements like blood pressure or weight, and Clinical Labs for official test results.",
+    "Vitals & Labs tab: Select a metric or test name from the left sidebar to see its trend chart and full history table.",
+    "Vitals & Labs tab: The trend chart plots numeric values over time. A green dashed line shows the normal reference range when available.",
+    "Vitals & Labs tab: Click a column header in the Historical Test Table to sort results.",
+    # Documents
+    'Medical Records tab: Upload any medical document (PDF, image, etc.) using the "Upload Document" button.',
+    'Medical Records tab: After uploading, AI extraction runs in the background. An orange "Review Suggestions" button will appear on the Overview tab when it is ready.',
+    "Medical Records tab: Click a column header (Upload Date, Visit Date, Specialty) to sort the table. Click again to reverse the order.",
+    "Medical Records tab: Documents are encrypted on your device. The Open button decrypts a secure temporary copy for viewing.",
+    # Providers
+    "Provider Directory tab: Primarily used for release of information forms, but you can use it to track any provider you choose.",
+    # Family History
+    "Family History tab: Only 1st and 2nd degree relatives are listed here since those are what science agrees matter for hereditary risk, but you can add more if you want to.",
+    "Family History tab: Your own diagnoses live in the Health Record tab, not here.",
+    # Settings
+    "Settings tab: Your recovery key lets you restore your vault if you ever forget your password.",
+    "Settings tab: Rotating the recovery key will invalidate your old key and generate a fresh one.",
+]
 
 class SignaturePad(ft.GestureDetector):
     @staticmethod
@@ -608,6 +642,8 @@ class PaperworkWizard:
                         size=pt_scale(self.page, 12),
                         color=ft.Colors.PRIMARY,
                     ),
+                    ft.Container(height=pt_scale(self.page, 8)),
+                    self._make_tip_card(),
                 ])
                 self.dlg.open = True
                 self.page.update()
@@ -1023,8 +1059,40 @@ class PaperworkWizard:
             ),
             ft.ProgressBar(width=pt_scale(self.page, 440)),
             explanation,
+            ft.Container(height=pt_scale(self.page, 8)),
+            self._make_tip_card(),
         ])
 
         if self.dlg.open:
             self.dlg.update()
         self.page.update()
+
+    def _make_tip_card(self) -> ft.Container:
+        """Returns a styled card showing one randomly chosen loading tip."""
+        tip = random.choice(_LOADING_TIPS)
+        return ft.Container(
+            padding=ft.padding.symmetric(
+                horizontal=pt_scale(self.page, 12),
+                vertical=pt_scale(self.page, 10),
+            ),
+            border_radius=pt_scale(self.page, 8),
+            bgcolor=ft.Colors.with_opacity(0.07, ft.Colors.PRIMARY),
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        ft.Icons.LIGHTBULB_OUTLINE,
+                        color=ft.Colors.YELLOW,
+                        size=pt_scale(self.page, 18),
+                    ),
+                    ft.Text(
+                        tip,
+                        expand=True,
+                        size=pt_scale(self.page, 12),
+                        color=ft.Colors.SECONDARY,
+                        italic=True,
+                    ),
+                ],
+                spacing=pt_scale(self.page, 8),
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+        )

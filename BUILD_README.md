@@ -1,4 +1,4 @@
-# LPA — Developer Build Guide
+# Medical Record Management Assistant (MRMA) — Developer Build Guide
 
 ## Prerequisites
 
@@ -43,9 +43,9 @@ python main.py
 ```
 
 The database is created at:
-- **Windows:** `%LOCALAPPDATA%\LPA\LocalPatientAdvocate\`
-- **macOS:** `~/Library/Application Support/LocalPatientAdvocate/`
-- **Linux:** `~/.local/share/LocalPatientAdvocate/`
+- **Windows:** `%LOCALAPPDATA%\MRMA\MedicalRecordManagementAssistant\`
+- **macOS:** `~/Library/Application Support/MedicalRecordManagementAssistant/`
+- **Linux:** `~/.local/share/MedicalRecordManagementAssistant/`
 
 ## Building the Portable App (Windows)
 
@@ -54,8 +54,8 @@ The database is created at:
 ```
 
 Output:
-- `dist\lpa\lpa.exe` — run-in-place folder (portable)
-- `dist\LPA-portable-win.zip` — distributable archive
+- `dist\mrma\mrma.exe` — run-in-place folder (portable)
+- `dist\MRMA-portable-win.zip` — distributable archive
 
 **PyInstaller onedir rationale:** `--onedir` is used instead of `--onefile` because `--onefile` extracts the entire bundle to a temp directory on every launch, causing 5–30 second startup delays on older hardware. `--onedir` only loads what's needed at runtime.
 
@@ -69,13 +69,13 @@ The app works fully without the AI model — the AI query section is disabled un
 
 Windows SmartScreen will warn about the unsigned executable. Users can bypass:
 
-1. Right-click `lpa.exe` → **Properties**
+1. Right-click `mrma.exe` → **Properties**
 2. Check **Unblock** → **OK**
 3. Or: Click **More info → Run anyway** in the SmartScreen dialog
 
 macOS Gatekeeper:
 ```bash
-xattr -d com.apple.quarantine LPA-portable-mac/lpa
+xattr -d com.apple.quarantine MRMA-portable-mac/mrma
 ```
 
 ## Running Tests

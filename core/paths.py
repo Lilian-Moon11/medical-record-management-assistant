@@ -11,9 +11,9 @@
 #
 # Replaces any hardcoded or CWD-relative path assumptions throughout the app.
 # All paths are derived from platformdirs.user_data_dir, which resolves to:
-#   Windows : %LOCALAPPDATA%\LPA\LocalPatientAdvocate\
-#   macOS   : ~/Library/Application Support/LocalPatientAdvocate/
-#   Linux   : ~/.local/share/LocalPatientAdvocate/
+#   Windows : %LOCALAPPDATA%\MRMA\MedicalRecordManagementAssistant\
+#   macOS   : ~/Library/Application Support/MedicalRecordManagementAssistant/
+#   Linux   : ~/.local/share/MedicalRecordManagementAssistant/
 #
 # Directories are created at import time (idempotent via exist_ok=True).
 # No application logic lives here — only path constants.
@@ -27,7 +27,7 @@ from platformdirs import user_data_dir
 
 # ── Root ─────────────────────────────────────────────────────────────────────
 
-app_dir: Path = Path(user_data_dir("LocalPatientAdvocate", "LPA"))
+app_dir: Path = Path(user_data_dir("MedicalRecordManagementAssistant", "MRMA"))
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -57,3 +57,4 @@ def _ensure_dirs() -> None:
 
 
 _ensure_dirs()
+

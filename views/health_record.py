@@ -95,6 +95,17 @@ def _load_json_list(raw: Optional[str]) -> List[dict]:
         return []
 
 
+def _migrate_surgeries(items: List[dict]) -> List[dict]:
+    """Migrate legacy 'provider' field → 'surgeon' (facility left blank)."""
+    for item in items:
+        if "provider" in item:
+            if not item.get("surgeon"):
+                item["surgeon"] = item.pop("provider")
+            else:
+                del item["provider"]
+    return items
+
+
 def _make_list_delete_dialog(page: ft.Page) -> ft.AlertDialog:
     if hasattr(page, "_list_delete_dlg"):
         return page._list_delete_dlg
@@ -114,187 +125,48 @@ def _make_list_delete_dialog(page: ft.Page) -> ft.AlertDialog:
 
 
 # -----------------------------------------------------------------------------
-# 1) JSON LIST PANELS (Allergies, Meds, Insurance)
+# 1) JSON LIST PANELS — DataTable-based (Allergies, Meds, Insurance, etc.)
 # -----------------------------------------------------------------------------
-class ListRow(ft.Container):
-    def __init__(
-        self,
-        page: ft.Page,
-        parent_panel: "ListEditorBody",
-        item: dict,
-        columns: List[Tuple[str, str]],
-    ):
-        super().__init__(padding=pt_scale(page, 8))
-        self._page = page
-        self.parent_panel = parent_panel
-        self.columns = columns
-        self.is_section_sensitive = self.parent_panel.is_section_sensitive
 
-        self._item_id = item.get("_id") or str(uuid.uuid4().hex)[:8]
-        self.row_id = f"{self.parent_panel.field_key}_{self._item_id}"
-        # Preserve underscore-prefixed metadata from the JSON item
-        self._meta = {k: v for k, v in item.items() if k.startswith("_")}
-
-        default_vis = not self.is_section_sensitive
-        self.row_revealed = self._page._field_vis.get(self.row_id, default_vis)
-
-        # Dictionary to hold our controls (TextFields or Checkboxes)
-        self.controls_map: Dict[str, ft.Control] = {}
-        row_controls: List[ft.Control] = []
-
-        for k, lbl in columns:
-            if k == "is_current":
-                # Checkbox logic for "Current?" marker
-                cb = ft.Checkbox(
-                    label=lbl,
-                    value=bool(item.get(k, False)),
-                    on_change=lambda e: self.parent_panel.save_all() # Auto-save on toggle
-                )
-                self.controls_map[k] = cb
-                row_controls.append(cb)
-            else:
-                # Standard text field logic
-                tf = ft.TextField(
-                    label=lbl,
-                    value=str(item.get(k, "") or ""),
-                    password=not self.row_revealed if self.is_section_sensitive else False,
-                    can_reveal_password=False,
-                    expand=True,
-                    dense=True,
-                )
-                self.controls_map[k] = tf
-                row_controls.append(tf)
-
-        # Only add the eye button if the master section switch is ON
-        if self.is_section_sensitive:
-            self.eye_btn = make_eye_btn(page, self.row_revealed)
-            self.eye_btn.on_click = self.toggle_reveal
-            row_controls.append(self.eye_btn)
-        else:
-            self.eye_btn = None
-
-        # Provenance: show source + updated per row from ITEM-LEVEL metadata
-        self._prov_source_text = None
-        self._prov_updated_text = None
-        if bool(getattr(page, "_show_source", False)):
-            src_val = item.get("_source") or getattr(self.parent_panel, "_source", "") or "User"
-            
-            if str(src_val).lower() == "ai" and item.get("_ai_source"):
-                ai_filename = item.get("_ai_source")
-                
-                def _open_ai_doc(e, fname=ai_filename):
-                    import asyncio
-                    import os
-                    import tempfile
-                    from datetime import datetime
-                    from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
-                    try:
-                        cur = page.db_connection.cursor()
-                        cur.execute("SELECT file_path FROM documents WHERE patient_id=? AND file_name=? ORDER BY id DESC LIMIT 1", (self.parent_panel.patient_id, fname))
-                        row = cur.fetchone()
-                        if not row or not row[0] or not os.path.exists(row[0]):
-                            show_snack(page, "Original file not found.", "red")
-                            return
-                        enc_path = row[0]
-                        fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
-                        with open(enc_path, "rb") as f:
-                            ciphertext = f.read()
-                        plaintext = decrypt_bytes(fmk, ciphertext)
-                        
-                        _, file_ext = os.path.splitext(fname)
-                        if not file_ext: file_ext = ".pdf"
-                        
-                        tmp_dir = tempfile.gettempdir()
-                        tmp_path = os.path.join(tmp_dir, f"lpa_decrypted_{self.parent_panel.patient_id}_{int(datetime.now().timestamp())}{file_ext}")
-                        with open(tmp_path, "wb") as f:
-                            f.write(plaintext)
-                        
-                        import os
-                        os.startfile(tmp_path)
-                        show_snack(page, f"Opened {fname}", "blue")
-                    except Exception as ex:
-                        show_snack(page, f"Failed to open source document: {ex}", "red")
-
-                self._prov_source_text = ft.TextButton(
-                    str(ai_filename),
-                    on_click=_open_ai_doc,
-                    tooltip="Open source document",
-                    style=ft.ButtonStyle(
-                        color=ft.Colors.BLUE,
-                        padding=0,
-                    ),
-                    width=pt_scale(page, 120),
-                )
-            else:
-                self._prov_source_text = ft.Text(src_val, width=pt_scale(page, 120))
-            row_controls.append(self._prov_source_text)
-        if bool(getattr(page, "_show_updated", False)):
-            upd_val = item.get("_updated") or getattr(self.parent_panel, "_updated_at", "") or "\u2014"
-            self._prov_updated_text = ft.Text(upd_val, width=pt_scale(page, 140))
-            row_controls.append(self._prov_updated_text)
-
-        row_controls.extend([
-            ft.IconButton(icon=ft.Icons.SAVE, tooltip="Save row", on_click=self.save_row),
-            ft.IconButton(icon=ft.Icons.DELETE, tooltip="Remove", on_click=self.remove_row),
-        ])
-
-        self.content = ft.Row(row_controls, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-
-    def set_revealed(self, state: bool):
-        if not self.is_section_sensitive:
-            return
-        self.row_revealed = state
-        self._page._field_vis[self.row_id] = state
-        
-        # Only hide text in TextFields; Checkboxes remain visible
-        for ctrl in self.controls_map.values():
-            if isinstance(ctrl, ft.TextField):
-                ctrl.password = not state
-                _safe_update(ctrl)
-                
-        if self.eye_btn:
-            self.eye_btn.icon = ft.Icons.VISIBILITY_OFF if state else ft.Icons.VISIBILITY
-            self.eye_btn.tooltip = "Hide" if state else "Reveal"
-            _safe_update(self.eye_btn)
-
-    def toggle_reveal(self, e=None):
-        self.set_revealed(not self.row_revealed)
-
-    def get_data_dict(self) -> dict:
-        """Extracts the correct value type based on the control."""
-        d = {}
-        for k, ctrl in self.controls_map.items():
-            if isinstance(ctrl, ft.Checkbox):
-                d[k] = ctrl.value
-            else:
-                d[k] = (ctrl.value or "").strip()
-        d["_id"] = self._item_id
-        # Reattach stored metadata (_source, _updated, _ai_source)
-        d.update(self._meta)
-        return d
-
-    def save_row(self, e):
-        self.parent_panel.save_all(triggering_row=self)
-        show_snack(self._page, "Saved row.", "green")
-
-    def remove_row(self, e):
-        dlg = _make_list_delete_dialog(self._page)
-        def confirm_del(_e):
-            dlg.open = False
-            _safe_update(dlg)
-            self.parent_panel.remove_row(self)
-            self.parent_panel.save_all()
-            show_snack(self._page, "Item deleted.", "green")
-        def cancel_del(_e):
-            dlg.open = False
-            _safe_update(dlg)
-        dlg.actions[0].on_click = cancel_del
-        dlg.actions[1].on_click = confirm_del
-        dlg.open = True
-        self._page.update()
+# Per-column TextField width hints (in pt, before scaling).
+# Notes / main-content columns are intentionally wide to match the
+# Demographics "Value" column width.  Horizontal scroll handles overflow.
+_FIELD_WIDTHS: dict = {
+    # Primary identifier columns
+    "substance":      180,
+    "name":           220,
+    "payer":          180,
+    # Secondary descriptor columns
+    "reaction":       200,
+    "symptoms":       200,
+    "dose":            90,
+    "frequency":      130,
+    # Date columns
+    "date":           110,
+    "onset_date":     110,
+    "diagnosis_date": 120,
+    # Surgeon split
+    "surgeon":        200,
+    "facility":       200,
+    # Insurance detail columns
+    "member_id":      130,
+    "group_no":        80,
+    "bin":             70,
+    "pcn":             70,
+    "phone":          120,
+    # Long-text / notes — wide like the Value column in Demographics
+    "notes":          340,
+}
+_DEFAULT_FIELD_WIDTH = 150  # fallback for unlisted keys
 
 
 class ListEditorBody(ft.Column):
+    """
+    Renders a JSON-backed list (e.g. allergies, medications) as a ft.DataTable
+    with inline-editable TextFields per cell.  Matches the visual style of
+    CategoryPanel / Demographics.  Replaces the previous ListRow approach.
+    """
+
     def __init__(
         self,
         page: ft.Page,
@@ -321,17 +193,38 @@ class ListEditorBody(ft.Column):
         _ensure_sets(page)
         self.panel_revealed = self._page._panel_vis.get(self.field_key, True)
 
-        self.rows_col = ft.Column(spacing=pt_scale(page, 8), tight=True)
-        self.row_components: List[ListRow] = []
+        # Sort state
+        self._sort_col_key: str | None = None
+        self._sort_col_idx: int | None = None
+        self._sort_asc: bool = True
 
-        for it in items:
-            self.add_row_component(it)
+        # Ensure every item has a stable _id
+        for item in items:
+            if not item.get("_id"):
+                item["_id"] = uuid.uuid4().hex[:8]
+        self._items: List[dict] = list(items)
 
+        # {item_id: {field_key: control}}
+        self._ctrl_refs: dict = {}
+
+        # --- DataTable ---
+        self.data_table = ft.DataTable(
+            columns=self._build_col_headers(),
+            rows=[],
+            column_spacing=pt_scale(page, 12),
+            heading_row_height=pt_scale(page, 40),
+            data_row_min_height=pt_scale(page, 44),
+            data_row_max_height=pt_scale(page, 56),
+            heading_row_color=ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
+            if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+            border_radius=8,
+        )
+        self._build_table_rows()
+
+        # --- Header ---
         self.add_btn = ft.FilledButton("Add", icon=ft.Icons.ADD, on_click=self.add_row)
-
         header_controls: List[Any] = [ft.Text(title, size=pt_scale(page, 18), weight="bold")]
-
-        # Add panel master eye ONLY if feature is ON
         if self.is_section_sensitive:
             self.eye_btn = make_eye_btn(self._page, self.panel_revealed)
             self.eye_btn.tooltip = "Hide All" if self.panel_revealed else "Reveal All"
@@ -339,85 +232,305 @@ class ListEditorBody(ft.Column):
             header_controls.append(self.eye_btn)
         else:
             self.eye_btn = None
-
         header_controls.extend([ft.Container(expand=True), self.add_btn])
 
-        panel_controls: List[Any] = [ft.Row(header_controls)]
+        self.controls = [
+            ft.Row(header_controls),
+            ft.Row([self.data_table], scroll=ft.ScrollMode.ALWAYS),
+        ]
 
-        # Column headers for provenance (matching row controls)
-        _ss = bool(getattr(page, "_show_source", False))
-        _su = bool(getattr(page, "_show_updated", False))
-        if _ss or _su:
-            header_labels: List[Any] = []
+    # ------------------------------------------------------------------
+    # Column header construction
+    # ------------------------------------------------------------------
+    def _build_col_headers(self) -> List[ft.DataColumn]:
+        cols: List[ft.DataColumn] = []
+        for k, lbl in self.columns:
+            if k == "is_current":
+                cols.append(ft.DataColumn(ft.Text(lbl)))
+            else:
+                cols.append(ft.DataColumn(ft.Text(lbl), on_sort=self._on_col_sort))
+        _ss = bool(getattr(self._page, "_show_source", False))
+        _su = bool(getattr(self._page, "_show_updated", False))
+        if _ss:
+            cols.append(ft.DataColumn(ft.Text("Source")))
+        if _su:
+            cols.append(ft.DataColumn(ft.Text("Updated")))
+        cols.append(ft.DataColumn(ft.Text("Actions")))
+        return cols
+
+    # ------------------------------------------------------------------
+    # Row building
+    # ------------------------------------------------------------------
+    def _build_table_rows(self) -> None:
+        _ss = bool(getattr(self._page, "_show_source", False))
+        _su = bool(getattr(self._page, "_show_updated", False))
+        self._ctrl_refs = {}
+        rows: List[ft.DataRow] = []
+
+        for item in self._items:
+            item_id = item.get("_id") or uuid.uuid4().hex[:8]
+            item["_id"] = item_id
+            vis_key = f"{self.field_key}_{item_id}"
+            default_vis = not self.is_section_sensitive
+            revealed = self._page._field_vis.get(vis_key, default_vis)
+
+            ctrl_map: dict = {}
+            cells: List[ft.DataCell] = []
+
+            for k, _lbl in self.columns:
+                if k == "is_current":
+                    cb = ft.Checkbox(
+                        value=bool(item.get(k, False)),
+                        on_change=lambda e, iid=item_id: self._save_row(iid),
+                    )
+                    ctrl_map[k] = cb
+                    cells.append(ft.DataCell(cb))
+                else:
+                    col_w = pt_scale(self._page, _FIELD_WIDTHS.get(k, _DEFAULT_FIELD_WIDTH))
+                    tf = ft.TextField(
+                        value=str(item.get(k, "") or ""),
+                        dense=True,
+                        border_radius=4,
+                        password=self.is_section_sensitive and not revealed,
+                        can_reveal_password=False,
+                        width=col_w,
+                    )
+                    ctrl_map[k] = tf
+                    cells.append(ft.DataCell(tf))
+
+            self._ctrl_refs[item_id] = ctrl_map
+
+            # --- Provenance cells ---
             if _ss:
-                header_labels.append(ft.Text("Source", size=pt_scale(page, 12), weight="bold", width=pt_scale(page, 120)))
+                src_val = str(item.get("_source", "") or "User")
+                ai_fname = item.get("_ai_source", "")
+                if src_val.lower() == "ai" and ai_fname:
+                    def _open_ai_doc(e, fname=ai_fname):
+                        import os, tempfile, time as _time
+                        from crypto.file_crypto import (
+                            get_or_create_file_master_key, decrypt_bytes,
+                        )
+                        try:
+                            cur = self._page.db_connection.cursor()
+                            cur.execute(
+                                "SELECT file_path FROM documents "
+                                "WHERE patient_id=? AND file_name=? "
+                                "ORDER BY id DESC LIMIT 1",
+                                (self.patient_id, fname),
+                            )
+                            row = cur.fetchone()
+                            if not row or not row[0] or not os.path.exists(row[0]):
+                                show_snack(self._page, "Source file not found.", "red")
+                                return
+                            fmk = get_or_create_file_master_key(
+                                self._page.db_connection,
+                                dmk_raw=self._page.db_key_raw,
+                            )
+                            with open(row[0], "rb") as f:
+                                ciphertext = f.read()
+                            plaintext = decrypt_bytes(fmk, ciphertext)
+                            _, ext = os.path.splitext(fname)
+                            tmp = os.path.join(
+                                tempfile.gettempdir(),
+                                f"mrma_dec_{int(_time.time())}{ext or '.pdf'}",
+                            )
+                            with open(tmp, "wb") as f:
+                                f.write(plaintext)
+                            os.startfile(tmp)
+                            show_snack(self._page, f"Opened {fname}", "blue")
+                        except Exception as ex:
+                            show_snack(self._page, f"Open failed: {ex}", "red")
+
+                    src_ctrl: ft.Control = ft.TextButton(
+                        ai_fname,
+                        on_click=_open_ai_doc,
+                        tooltip="Open source document",
+                        style=ft.ButtonStyle(color=ft.Colors.BLUE, padding=0),
+                    )
+                else:
+                    src_ctrl = ft.Text(src_val)
+                cells.append(ft.DataCell(src_ctrl))
+
             if _su:
-                header_labels.append(ft.Text("Updated", size=pt_scale(page, 12), weight="bold", width=pt_scale(page, 140)))
-            # Spacer to align with action buttons
-            header_labels.extend([ft.Container(width=pt_scale(page, 40)), ft.Container(width=pt_scale(page, 40))])
-            prov_header = ft.Row(header_labels, alignment=ft.MainAxisAlignment.END)
-            panel_controls.append(prov_header)
+                upd_val = str(item.get("_updated", "") or "\u2014")
+                cells.append(ft.DataCell(ft.Text(upd_val)))
 
-        panel_controls.append(self.rows_col)
-        self.controls = panel_controls
+            # --- Action cell (eye? + save + delete) ---
+            action_ctrls: List[ft.Control] = []
+            if self.is_section_sensitive:
+                eye = make_eye_btn(self._page, revealed)
+                eye.on_click = lambda e, iid=item_id: self._toggle_row_reveal(iid)
+                action_ctrls.append(eye)
+            action_ctrls += [
+                ft.IconButton(
+                    ft.Icons.SAVE,
+                    tooltip="Save row",
+                    icon_size=18,
+                    on_click=lambda e, iid=item_id: self._save_row(iid),
+                ),
+                ft.IconButton(
+                    ft.Icons.DELETE,
+                    tooltip="Remove row",
+                    icon_size=18,
+                    on_click=lambda e, iid=item_id: self._delete_row(iid),
+                ),
+            ]
+            cells.append(ft.DataCell(ft.Row(action_ctrls, tight=True, spacing=0)))
 
-    def toggle_panel_reveal(self, e):
-        if not self.is_section_sensitive:
-            return
-            
-        self.panel_revealed = not self.panel_revealed
-        self._page._panel_vis[self.field_key] = self.panel_revealed
+            rows.append(ft.DataRow(cells=cells))
 
-        if self.eye_btn:
-            self.eye_btn.icon = ft.Icons.VISIBILITY_OFF if self.panel_revealed else ft.Icons.VISIBILITY
-            self.eye_btn.tooltip = "Hide All" if self.panel_revealed else "Reveal All"
-            _safe_update(self.eye_btn)
+        self.data_table.rows = rows
 
-        for rc in self.row_components:
-            rc.set_revealed(self.panel_revealed)
+    # ------------------------------------------------------------------
+    # Data helpers
+    # ------------------------------------------------------------------
+    def _collect_item(self, item_id: str) -> dict:
+        """Read live control values for one item into a dict."""
+        ctrls = self._ctrl_refs.get(item_id, {})
+        orig = next((x for x in self._items if x.get("_id") == item_id), {})
+        d: dict = {}
+        for k, _ in self.columns:
+            ctrl = ctrls.get(k)
+            if ctrl is None:
+                d[k] = orig.get(k, "")
+            elif isinstance(ctrl, ft.Checkbox):
+                d[k] = bool(ctrl.value)
+            else:
+                d[k] = (ctrl.value or "").strip()
+        d["_id"] = item_id
+        # Preserve underscore-prefixed metadata
+        for mk, mv in orig.items():
+            if mk.startswith("_") and mk != "_id":
+                d[mk] = mv
+        return d
 
-    def add_row_component(self, item: dict):
-        rc = ListRow(self._page, self, item, self.columns)
-        self.row_components.append(rc)
-        self.rows_col.controls.append(rc)
-
-    def add_row(self, e):
-        self.add_row_component({})
-        _safe_update(self)
-
-    def remove_row(self, row_comp: ListRow):
-        self.row_components.remove(row_comp)
-        self.rows_col.controls.remove(row_comp)
-        _safe_update(self)
-
-    def save_all(self, triggering_row=None):
-        cleaned: List[dict] = []
-        for rc in self.row_components:
-            d = rc.get_data_dict()
-            has_content = any(
-                str(d.get(k, "")).strip() != "" 
-                for k, _ in self.columns 
+    def _persist(self) -> None:
+        """Write non-empty items to storage via on_save."""
+        clean = [
+            d for d in self._items
+            if any(
+                str(d.get(k, "")).strip() != ""
+                for k, _ in self.columns
                 if k != "is_current"
             )
-            if not has_content:
+        ]
+        self.on_save(clean)
+
+    # ------------------------------------------------------------------
+    # Row operations
+    # ------------------------------------------------------------------
+    def _save_row(self, item_id: str) -> None:
+        d = self._collect_item(item_id)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        d["_source"] = "user"
+        d["_updated"] = now_str
+        for i, item in enumerate(self._items):
+            if item.get("_id") == item_id:
+                self._items[i] = d
+                break
+        self._persist()
+        show_snack(self._page, "Saved row.", "green")
+
+    def _delete_row(self, item_id: str) -> None:
+        dlg = _make_list_delete_dialog(self._page)
+
+        def confirm(_):
+            dlg.open = False
+            _safe_update(dlg)
+            self._items = [x for x in self._items if x.get("_id") != item_id]
+            self._persist()
+            self._build_table_rows()
+            _safe_update(self.data_table)
+            show_snack(self._page, "Item deleted.", "green")
+
+        def cancel(_):
+            dlg.open = False
+            _safe_update(dlg)
+
+        dlg.actions[0].on_click = cancel
+        dlg.actions[1].on_click = confirm
+        dlg.open = True
+        self._page.update()
+
+    def add_row(self, e=None) -> None:
+        new_item = {"_id": uuid.uuid4().hex[:8]}
+        self._items.append(new_item)
+        self._build_table_rows()
+        _safe_update(self.data_table)
+
+    # ------------------------------------------------------------------
+    # Sensitivity toggles
+    # ------------------------------------------------------------------
+    def toggle_panel_reveal(self, e=None) -> None:
+        if not self.is_section_sensitive:
+            return
+        self.panel_revealed = not self.panel_revealed
+        self._page._panel_vis[self.field_key] = self.panel_revealed
+        if self.eye_btn:
+            self.eye_btn.icon = (
+                ft.Icons.VISIBILITY_OFF if self.panel_revealed else ft.Icons.VISIBILITY
+            )
+            self.eye_btn.tooltip = "Hide All" if self.panel_revealed else "Reveal All"
+            _safe_update(self.eye_btn)
+        for item in self._items:
+            iid = item.get("_id")
+            if not iid:
                 continue
-            # Stamp per-item provenance only for the triggering row
-            if triggering_row and rc is triggering_row:
-                from datetime import datetime
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                d["_source"] = "user"
-                d["_updated"] = now_str
-                # Persist to _meta so future get_data_dict() calls include it
-                rc._meta["_source"] = "user"
-                rc._meta["_updated"] = now_str
-                if rc._prov_updated_text:
-                    rc._prov_updated_text.value = now_str
-                    _safe_update(rc._prov_updated_text)
-                if rc._prov_source_text:
-                    rc._prov_source_text.value = "user"
-                    _safe_update(rc._prov_source_text)
-            cleaned.append(d)
-        self.on_save(cleaned)
+            vis_key = f"{self.field_key}_{iid}"
+            self._page._field_vis[vis_key] = self.panel_revealed
+            for k, _ in self.columns:
+                ctrl = self._ctrl_refs.get(iid, {}).get(k)
+                if isinstance(ctrl, ft.TextField):
+                    ctrl.password = not self.panel_revealed
+                    _safe_update(ctrl)
+
+    def _toggle_row_reveal(self, item_id: str) -> None:
+        vis_key = f"{self.field_key}_{item_id}"
+        current = self._page._field_vis.get(vis_key, not self.is_section_sensitive)
+        new_state = not current
+        self._page._field_vis[vis_key] = new_state
+        for k, _ in self.columns:
+            ctrl = self._ctrl_refs.get(item_id, {}).get(k)
+            if isinstance(ctrl, ft.TextField):
+                ctrl.password = not new_state
+                _safe_update(ctrl)
+
+    # ------------------------------------------------------------------
+    # Column-header sort
+    # ------------------------------------------------------------------
+    def _on_col_sort(self, e: ft.DataColumnSortEvent) -> None:
+        col_idx = e.column_index
+        if col_idx >= len(self.columns):
+            return
+        col_key = self.columns[col_idx][0]
+        if col_key == "is_current":
+            return
+
+        # Snapshot live TextField values before sorting
+        for item in self._items:
+            iid = item.get("_id")
+            if iid and iid in self._ctrl_refs:
+                for k, _ in self.columns:
+                    ctrl = self._ctrl_refs[iid].get(k)
+                    if ctrl and not isinstance(ctrl, ft.Checkbox):
+                        item[k] = (ctrl.value or "").strip()
+
+        if self._sort_col_key == col_key:
+            self._sort_asc = not self._sort_asc
+        else:
+            self._sort_col_key = col_key
+            self._sort_col_idx = col_idx
+            self._sort_asc = True
+
+        def _key(d: dict):
+            v = d.get(col_key, "")
+            return str(v or "").lower()
+
+        self._items.sort(key=_key, reverse=not self._sort_asc)
+        self._build_table_rows()
+        self.data_table.sort_column_index = self._sort_col_idx or col_idx
+        self.data_table.sort_ascending = self._sort_asc
+
 
 
 # -----------------------------------------------------------------------------
@@ -439,6 +552,7 @@ class CategoryPanel(ft.Column):
         self.category_name = category_name
         self.value_map = value_map
         self.is_section_sensitive = bool(is_section_sensitive)
+        self._defs_list = list(defs_list)  # store for re-sort
 
         _ensure_sets(page)
         self._show_source = bool(getattr(page, "_show_source", False))
@@ -447,24 +561,53 @@ class CategoryPanel(ft.Column):
         self.panel_key = f"cat_{slugify_label(self.category_name)}"
         self.panel_revealed = self._page._panel_vis.get(self.panel_key, True)
 
+        # Per-panel sort state stored on page
+        _sc_key = f"_hrsort_{self.panel_key}_col"
+        _sa_key = f"_hrsort_{self.panel_key}_asc"
+        if not hasattr(page, _sc_key):
+            setattr(page, _sc_key, 0)   # default: Field Name
+        if not hasattr(page, _sa_key):
+            setattr(page, _sa_key, True)
+        self._sc_key = _sc_key
+        self._sa_key = _sa_key
+
         self._rows: list[dict] = []
 
+        # ---- Sort handler ----
+        def _on_sort(e: ft.DataColumnSortEvent):
+            cur_col = getattr(self._page, self._sc_key)
+            if cur_col == e.column_index:
+                setattr(self._page, self._sa_key, not getattr(self._page, self._sa_key))
+            else:
+                setattr(self._page, self._sc_key, e.column_index)
+                setattr(self._page, self._sa_key, True)
+            self._rebuild_rows()
+
         cols = [
-            ft.DataColumn(ft.Text("Field Name")),
-            ft.DataColumn(ft.Text("Value")),
+            ft.DataColumn(ft.Text("Field Name"), on_sort=_on_sort),
+            ft.DataColumn(ft.Text("Value"),      on_sort=_on_sort),
         ]
         if self._show_source:
             cols.append(ft.DataColumn(ft.Text("Source")))
         if self._show_updated:
             cols.append(ft.DataColumn(ft.Text("Updated")))
-        cols += [
-            ft.DataColumn(ft.Text("Save")),
-            ft.DataColumn(ft.Text("Delete")),
-        ]
+        cols.append(ft.DataColumn(ft.Text("Actions")))
 
-        self.table = ft.DataTable(columns=cols, rows=[])
-        for d in defs_list:
-            self.table.rows.append(self.create_row(d))
+        self.table = ft.DataTable(
+            columns=cols,
+            rows=[],
+            sort_column_index=getattr(page, _sc_key),
+            sort_ascending=getattr(page, _sa_key),
+            column_spacing=pt_scale(page, 12),
+            heading_row_height=pt_scale(page, 40),
+            data_row_min_height=pt_scale(page, 44),
+            data_row_max_height=pt_scale(page, 56),
+            heading_row_color=ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
+            if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+            border_radius=8,
+        )
+        self._populate_table()
 
         header_controls = [ft.Text(self.category_name, size=pt_scale(page, 18), weight="bold")]
 
@@ -481,7 +624,41 @@ class CategoryPanel(ft.Column):
             ft.FilledButton("Add", icon=ft.Icons.ADD, on_click=self.add_row_click)
         ])
 
-        self.controls = [ft.Row(header_controls), ft.Row([self.table], scroll=ft.ScrollMode.AUTO)]
+        self.controls = [ft.Row(header_controls), ft.Row([self.table], scroll=ft.ScrollMode.ALWAYS)]
+
+    def _sort_defs(self, defs: list) -> list:
+        """Sort defs_list by the current sort column and direction."""
+        col = getattr(self._page, self._sc_key, 0)
+        asc = getattr(self._page, self._sa_key, True)
+
+        def _key(d):
+            if col == 0:  # Field Name / label
+                lbl = d[1] if d else ""
+                return str(lbl or "").lower()
+            elif col == 1:  # Value
+                fk = d[0] if d else None
+                if fk == "core.name":
+                    return str(self._page.current_profile[1] or "").lower()
+                elif fk == "core.dob":
+                    return str(self._page.current_profile[2] or "").lower()
+                val = (self.value_map.get(fk, {}) or {}).get("value", "") if fk else ""
+                return str(val or "").lower()
+            return ""
+
+        return sorted(defs, key=_key, reverse=not asc)
+
+    def _populate_table(self):
+        """Build table rows from _defs_list in current sort order."""
+        sorted_defs = self._sort_defs(self._defs_list)
+        self.table.rows = [self.create_row(d) for d in sorted_defs]
+        self.table.sort_column_index = getattr(self._page, self._sc_key, 0)
+        self.table.sort_ascending = getattr(self._page, self._sa_key, True)
+
+    def _rebuild_rows(self):
+        """Re-sort and rebuild rows then update the table."""
+        self._rows = []  # reset sensitivity tracking
+        self._populate_table()
+        _safe_update(self.table)
 
     def toggle_category(self, e):
         if not self.is_section_sensitive:
@@ -573,11 +750,7 @@ class CategoryPanel(ft.Column):
                 "field_key": field_key
             })
 
-        val_cell_controls = [value_tf]
-        if eye_btn:
-            val_cell_controls.append(eye_btn)
-            
-        val_cell = ft.Row(val_cell_controls, spacing=pt_scale(self._page, 4))
+        val_cell = ft.DataCell(value_tf)
 
         src_text = ft.Text(src)
         upd_text = ft.Text(upd)
@@ -658,16 +831,21 @@ class CategoryPanel(ft.Column):
 
         cells: List[ft.DataCell] = [
             ft.DataCell(field_tf),
-            ft.DataCell(val_cell),
+            val_cell,
         ]
         if self._show_source:
             cells.append(ft.DataCell(src_text))
         if self._show_updated:
             cells.append(ft.DataCell(upd_text))
-        cells += [
-            ft.DataCell(ft.IconButton(icon=ft.Icons.SAVE, tooltip="Save", on_click=save_click)),
-            ft.DataCell(del_btn),
+        # Actions: eye (if sensitive) → save → delete
+        action_ctrls: List[ft.Control] = []
+        if eye_btn:
+            action_ctrls.append(eye_btn)
+        action_ctrls += [
+            ft.IconButton(icon=ft.Icons.SAVE, tooltip="Save", on_click=save_click, icon_size=18),
+            del_btn,
         ]
+        cells.append(ft.DataCell(ft.Row(action_ctrls, tight=True, spacing=0)))
 
         row.cells = cells
         return row
@@ -794,7 +972,7 @@ def get_health_record_view(page: ft.Page):
             "Allergies / Intolerances",
             allergies_key,
             _load_json_list((value_map.get(allergies_key, {}) or {}).get("value")),
-            [("substance", "Substance"), ("reaction", "Reaction"), ("severity", "Severity"), ("notes", "Notes")],
+            [("substance", "Substance"), ("reaction", "Reaction"), ("notes", "Notes")],
             is_section_sensitive=is_sens(allergies_key),
             on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, allergies_key, json.dumps(items), "user"),
             source=_list_meta(allergies_key)[0],
@@ -813,9 +991,8 @@ def get_health_record_view(page: ft.Page):
             meds_key,
             _load_json_list((value_map.get(meds_key, {}) or {}).get("value")),
             [
-                ("is_current", "Current?"),  # This will render as a checkbox logic
+                ("is_current", "Current?"),
                 ("name", "Name"),
-                ("type", "Med/Supp"),
                 ("dose", "Dose"),
                 ("frequency", "Frequency"),
                 ("notes", "Notes")
@@ -868,12 +1045,13 @@ def get_health_record_view(page: ft.Page):
             patient_id,
             "Surgeries / Procedures",
             surgeries_key,
-            _load_json_list((value_map.get(surgeries_key, {}) or {}).get("value")),
+            _migrate_surgeries(_load_json_list((value_map.get(surgeries_key, {}) or {}).get("value"))),
             [
                 ("name", "Procedure Name"),
                 ("date", "Date"),
-                ("provider", "Surgeon/Facility"),
-                ("notes", "Outcome/Notes")
+                ("surgeon", "Surgeon"),
+                ("facility", "Facility"),
+                ("notes", "Notes")
             ],
             is_section_sensitive=is_sens("section.other"),
             on_save=lambda items: upsert_patient_field_value(
@@ -937,8 +1115,7 @@ def get_health_record_view(page: ft.Page):
         sections.append(ft.Container(height=pt_scale(page, 10)))
 
     _info_btn = make_info_button(page, "Health Record", [
-        "The \"Edit Visibility\" button lets you mark entire sections as sensitive so they are hidden by default.",
-        "Fields with an eye button are sensitive. Use the eye button to reveal or hide values in those sections.",
+        "The \"Edit Visibility\" button lets you mark sections as sensitive, adding eye icons that can be used to hide or reveal information.",
     ])
 
     return ft.Container(

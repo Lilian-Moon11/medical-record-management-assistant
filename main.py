@@ -50,7 +50,7 @@ import tempfile
 def cleanup_decrypted_temp_files():
     try:
         tmp_dir = tempfile.gettempdir()
-        pattern = os.path.join(tmp_dir, "lpa_decrypted_*.*")
+        pattern = os.path.join(tmp_dir, "mrma_decrypted_*.*")
         for f in glob.glob(pattern):
             try:
                 os.remove(f)

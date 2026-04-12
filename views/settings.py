@@ -194,7 +194,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
     # (Flet post-assignment of on_change is unreliable in some versions).
 
     def _save_theme(e):
-        val = theme_dd.value or "system"
+        val = getattr(e, 'data', None) or theme_dd.value or "system"
         set_setting(page.db_connection, "ui.theme", val)
         page.theme_mode = {
             "dark": ft.ThemeMode.DARK,
@@ -214,11 +214,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         ],
         value=current_theme,
     )
-    theme_save_btn = ft.IconButton(
-        icon=ft.Icons.SAVE,
-        tooltip="Save theme",
-        on_click=_save_theme,
-    )
+    theme_dd.on_select = _save_theme
 
     def _save_hc(e):
         val = e.control.value
@@ -966,10 +962,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     ]
                 ),
                 ft.Divider(),
-                ft.Row([
-                    theme_dd,
-                    theme_save_btn,
-                ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
+                theme_dd,
                 hc_switch,
                 _scale_label,
                 lt_slider,
@@ -984,7 +977,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 ft.Text("Recovery Key", size=pt_scale(page, 18), weight="bold"),
                 ft.Text(
                     "Your recovery key allows you to restore your vault if you forget your password. "
-                    "Rotating it will invalidate your old key and generate a new one.",
+                    "Rotating the recovery key will invalidate your old key and generate a new one.",
                     size=pt_scale(page, 14),
                     color=ft.Colors.GREY,
                 ),

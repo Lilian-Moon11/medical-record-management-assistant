@@ -70,19 +70,43 @@ def _inline_date_row(
 ) -> ft.Row:
     """Clickable date text that morphs into a TextField on click (Option A)."""
     # Determine color: red if overdue or due today, primary otherwise
-    def _date_color(date_str: str | None) -> str:
+    def _due_urgency(date_str: str | None) -> str | None:
+        """Return 'overdue', 'due_today', or None."""
         if not date_str:
-            return ft.Colors.SECONDARY
+            return None
         try:
             due = datetime.strptime(date_str, "%Y-%m-%d").date()
-            if due <= datetime.today().date():
-                return ft.Colors.RED
+            today = datetime.today().date()
+            if due < today:
+                return "overdue"
+            if due == today:
+                return "due_today"
         except Exception:
             pass
+        return None
+
+    def _date_color(date_str: str | None) -> str:
+        urgency = _due_urgency(date_str)
+        if urgency == "overdue":
+            return ft.Colors.RED
+        if urgency == "due_today":
+            return ft.Colors.AMBER_600
+        if not date_str:
+            return ft.Colors.SECONDARY
         return ft.Colors.PRIMARY
 
+    # Build display label: append " - PAST DUE" when overdue
+    def _display_label(date_str: str | None) -> str:
+        if not date_str:
+            return "Not set"
+        if _due_urgency(date_str) == "overdue":
+            return f"{date_str} - PAST DUE"
+        if _due_urgency(date_str) == "due_today":
+            return f"{date_str} - DUE TODAY"
+        return date_str
+
     display_btn = ft.TextButton(
-        initial_date or "Not set",
+        _display_label(initial_date),
         on_click=None,  # assigned below
         style=ft.ButtonStyle(
             color=_date_color(initial_date),
@@ -106,21 +130,22 @@ def _inline_date_row(
     def _show_edit(_e=None):
         display_btn.visible = False
         edit_field.visible = True
-        edit_field.focus()
         if row_ref:
             row_ref[0].update()
+        page.run_task(edit_field.focus)
 
     def _commit(_e=None):
         val = (edit_field.value or "").strip()
         if val:
             update_due_date(page.db_connection, request_id, val, source="manual")
-            display_btn.text = val
+            display_btn.text = _display_label(val)
             display_btn.style = ft.ButtonStyle(
                 color=_date_color(val),
                 padding=ft.padding.all(0),
                 overlay_color=ft.Colors.with_opacity(0.05, ft.Colors.PRIMARY),
             )
             on_change()
+            return  # refresh rebuilds all cards; old row is gone
         display_btn.visible = True
         edit_field.visible = False
         if row_ref:
@@ -338,12 +363,41 @@ def _build_request_card(
         tight=True,
     )
 
-    return themed_panel(
+    # ── Determine card border color based on due-date urgency ─────────────────
+    def _card_urgency(date_str: str | None) -> str | None:
+        if not date_str or is_complete:
+            return None
+        try:
+            due = datetime.strptime(date_str, "%Y-%m-%d").date()
+            today = datetime.today().date()
+            if due < today:
+                return "overdue"
+            if due == today:
+                return "due_today"
+        except Exception:
+            pass
+        return None
+
+    urgency = _card_urgency(due_date)
+    if urgency == "overdue":
+        border_color = ft.Colors.RED
+    elif urgency == "due_today":
+        border_color = ft.Colors.AMBER_600
+    else:
+        border_color = None
+
+    panel = themed_panel(
         page,
         card_content,
         padding=ft.padding.all(pt_scale(page, 10)),
         radius=8,
     )
+
+    # Override border if urgent
+    if border_color:
+        panel.border = ft.Border.all(2, border_color)
+
+    return panel
 
 
 # ── Requests panel ────────────────────────────────────────────────────────────
@@ -431,6 +485,8 @@ def get_overview_view(page: ft.Page):
         multiline=True,
         min_lines=5,
         expand=True,
+        border_color=ft.Colors.OUTLINE_VARIANT,
+        focused_border_color=ft.Colors.OUTLINE_VARIANT,
     )
 
     def save_notes(e):
@@ -560,10 +616,9 @@ def get_overview_view(page: ft.Page):
         "You will find question marks located in the top right of each tab (like the one that you clicked to get here) that will give you some information/suggestions/appreciation as you navigate.",
         "Inspiration for using the note space: a place to keep track of action items, things to remember to address at your next appointment, self affirmations. These notes can optionally be included when generating a summary PDF.",
         "The Records Requests panel tracks your ROI (Release of Information) follow-ups. A task is created automatically when you complete an ROI form. Click the due date to edit it inline.",
-        "When you upload a document that matches a pending request's provider name, a candidate banner will appear — click ✓ to confirm or ✗ to dismiss.",
         "The orange \"Review Suggestions\" button appears here when new data has been extracted from a document you uploaded. Click it to accept or dismiss each suggestion.",
         "Use \"Complete Paperwork\" to auto-fill common medical forms using your saved health record data.",
-        "Use \"Generate Summary\" to export a customisable PDF of your health record to share with providers.",
+        "Use \"Generate Summary\" to export a customizable PDF of your health record to share with providers.",
     ])
 
     # ── Header row (name, DOB, action buttons) ────────────────────────────────

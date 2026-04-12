@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller --onedir spec for Medical Record Management Assistant
-# Build: pyinstaller --clean build/lpa.spec
+# Build: pyinstaller --clean build/mrma.spec
 
 import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -61,7 +61,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='lpa',
+    name='mrma',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -81,5 +81,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='lpa',
+    name='mrma',
 )

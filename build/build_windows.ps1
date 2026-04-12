@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "Building LPA portable (Windows)..." -ForegroundColor Cyan
+Write-Host "Building MRMA portable (Windows)..." -ForegroundColor Cyan
 
 # Resolve pyinstaller from the venv (works without system-level install)
 $PyInstaller = ".venv\Scripts\pyinstaller.exe"
@@ -13,7 +13,7 @@ if (-not (Test-Path $PyInstaller)) {
 }
 
 # Clean previous build
-& $PyInstaller --noconfirm --clean build/lpa.spec
+& $PyInstaller --noconfirm --clean build/mrma.spec
 $buildExit = $LASTEXITCODE
 
 if ($buildExit -ne 0) {
@@ -22,12 +22,12 @@ if ($buildExit -ne 0) {
 }
 
 # Zip the onedir output
-$zipDest = "dist\LPA-portable-win.zip"
+$zipDest = "dist\MRMA-portable-win.zip"
 if (Test-Path $zipDest) { Remove-Item $zipDest -Force }
 
-Compress-Archive -Path "dist\lpa" -DestinationPath $zipDest -Force
+Compress-Archive -Path "dist\mrma" -DestinationPath $zipDest -Force
 
 Write-Host ""
 Write-Host "Build complete!" -ForegroundColor Green
-Write-Host "  Folder : dist\lpa\lpa.exe"
+Write-Host "  Folder : dist\mrma\mrma.exe"
 Write-Host "  Archive: $zipDest"

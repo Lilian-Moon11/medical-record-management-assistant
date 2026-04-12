@@ -63,9 +63,33 @@ def get_providers_view(page: ft.Page):
         ft.DataColumn(ft.Text("Delete")),
     ]
 
+    # ---- Sort state (nonlocal, like documents.py) ----
+    sort_column = 0   # default: Name
+    sort_ascending = True
+    _search_holder: list = [None]  # [0] = search_field ref, set after creation
+
+    def sort_table(e: ft.DataColumnSortEvent):
+        nonlocal sort_column, sort_ascending
+        if sort_column == e.column_index:
+            sort_ascending = not sort_ascending
+        else:
+            sort_column = e.column_index
+            sort_ascending = True
+        table.sort_column_index = sort_column
+        table.sort_ascending = sort_ascending
+        sf = _search_holder[0]
+        refresh_table(sf.value if sf else None)
+
+    # Wire on_sort to sortable columns (Name=0, Specialty=1, Clinic=2)
+    prov_cols[0] = ft.DataColumn(ft.Text("Name"),      on_sort=sort_table)
+    prov_cols[1] = ft.DataColumn(ft.Text("Specialty"), on_sort=sort_table)
+    prov_cols[2] = ft.DataColumn(ft.Text("Clinic"),    on_sort=sort_table)
+
     table = ft.DataTable(
         columns=prov_cols,
         rows=[],
+        sort_column_index=sort_column,
+        sort_ascending=sort_ascending,
         column_spacing=pt_scale(page, 14),
         heading_row_height=pt_scale(page, 40),
         data_row_min_height=pt_scale(page, 40),
@@ -121,12 +145,25 @@ def get_providers_view(page: ft.Page):
     # Table refresh (ONLY call update() safely)
     # ----------------------------
     def refresh_table(search_text: str | None = None):
+        nonlocal sort_column, sort_ascending
         try:
             rows = list_providers(page.db_connection, patient_id, search=search_text, limit=500)
         except Exception as ex:
             show_snack(page, f"Load failed: {ex}", "red")
             rows = []
 
+        # Sort in-memory by selected column
+        def _sort_key(r):
+            # r: (id, name, specialty, clinic, phone, fax, email, address, notes, created_at, updated_at)
+            if sort_column == 0:
+                return str(r[1] or "").lower()
+            elif sort_column == 1:
+                return str(r[2] or "").lower()
+            elif sort_column == 2:
+                return str(r[3] or "").lower()
+            return ""
+
+        rows = sorted(rows, key=_sort_key, reverse=not sort_ascending)
         _build_rows(rows)
 
         # Only update if mounted; DO NOT touch table.page
@@ -149,6 +186,7 @@ def get_providers_view(page: ft.Page):
         width=pt_scale(page, 340),
         on_submit=do_search,  # Enter triggers search
     )
+    _search_holder[0] = search_field  # wire into sort_table closure
 
     search_btn = ft.FilledButton(
         "Search",
@@ -369,7 +407,7 @@ def get_providers_view(page: ft.Page):
     _build_rows(initial_rows)
 
     _info_btn = make_info_button(page, "Provider Directory", [
-        "This is primarily used for completion of release of information forms, but can be used for any purpose you see fit.",
+        "This is primarily used for completion of release of information forms, but can be used for any purpose you choose.",
     ])
 
     header = ft.Row(

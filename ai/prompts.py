@@ -27,17 +27,23 @@ Normalization Rules:
 - Confidently ignore boilerplate document text, legal disclaimers, copyright dates, page numbers, and publisher markings.
 
 Expected JSON Structure for List Items:
-- vitals.list: {{"name": "...", "value": "...", "unit": "...", "date": "YYYY-MM-DD"}} 
+- vitals.list: {{"name": "...", "value": "...", "unit": "...", "date": "YYYY-MM-DD"}}
 - lab_results.list: {{"name": "...", "value_text": "...", "unit": "...", "abnormal_flag": "...", "date": "YYYY-MM-DD"}}
 - providers.list: {{"name": "...", "specialty": "...", "clinic": "...", "phone": "...", "fax": "...", "address": "..."}}
 - immunization.list: {{"vaccine": "...", "date": "YYYY-MM-DD", "lot": "...", "administered_by": "...", "notes": "..."}}
 - family_history.list: {{"relation": "...", "condition": "...", "notes": "..."}}
+- allergyintolerance.list: {{"substance": "...", "reaction": "...", "notes": "..."}}
+- medicationstatement.current_list: {{"name": "...", "dose": "...", "frequency": "...", "notes": "..."}}
+- procedures.list: {{"name": "...", "date": "YYYY-MM-DD", "surgeon": "...", "facility": "...", "notes": "..."}}
+- conditions.list: {{"name": "...", "onset_date": "YYYY-MM-DD", "diagnosis_date": "YYYY-MM-DD", "symptoms": "...", "notes": "..."}}
+- insurance.list: {{"payer": "...", "member_id": "...", "group_no": "...", "bin": "...", "pcn": "...", "phone": "...", "notes": "..."}}}
 
 EXAMPLE OUTPUT FORMAT:
 [
   {{"field_key": "patient.address", "value": "1210 Cullen Dr, Apt 4B, Forks, WA 98331", "confidence": 0.9}},
-  {{"field_key": "allergyintolerance.list", "value": {{"substance": "Kryptonite", "reaction": "Weakness", "severity": "High"}}, "confidence": 0.9}},
-  {{"field_key": "medicationstatement.current_list", "value": {{"name": "Felix Felicis", "dose": "1 vial", "frequency": "Daily"}}, "confidence": 0.95}},
+  {{"field_key": "allergyintolerance.list", "value": {{"substance": "Penicillin", "reaction": "Hives", "notes": ""}}, "confidence": 0.9}},
+  {{"field_key": "medicationstatement.current_list", "value": {{"name": "Metformin", "dose": "500mg", "frequency": "Twice daily", "notes": ""}}, "confidence": 0.95}},
+  {{"field_key": "procedures.list", "value": {{"name": "Appendectomy", "date": "2019-03-12", "surgeon": "Dr. Jane Smith", "facility": "Memorial Hospital", "notes": ""}}, "confidence": 0.9}},
   {{"field_key": "vitals.list", "value": {{"name": "Blood Pressure", "value": "120/80", "unit": "mmHg", "date": "2023-10-15"}}, "confidence": 0.9}}
 ]
 
