@@ -48,6 +48,9 @@ import glob
 import tempfile
 import logging
 from logging.handlers import RotatingFileHandler
+import time
+import asyncio
+from database import get_setting
 
 def setup_global_logging():
     log_dir = paths.app_dir / "logs"
@@ -66,6 +69,7 @@ def setup_global_logging():
     # Silence noisy downstream libraries (especially the harmless WinError 10054 in asyncio)
     logging.getLogger("flet").setLevel(logging.WARNING)
     logging.getLogger("flet_core").setLevel(logging.WARNING)
+    logging.getLogger("flet_desktop").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 setup_global_logging()
@@ -97,11 +101,18 @@ def main(page: ft.Page):
     page.window.height = 800
     page.theme_mode = ft.ThemeMode.SYSTEM
 
-    page.root = ft.Container(expand=True)
-    page.add(page.root)
-
     # --- state ---
     app_state.init_page_state(page)
+
+    page.mrma._last_activity = time.time()
+
+    def _update_activity(e=None):
+        page.mrma._last_activity = time.time()
+        
+    page.on_keyboard_event = _update_activity
+
+    page.root = ft.Container(expand=True, on_hover=_update_activity)
+    page.add(page.root)
 
     # --- routing & settings ---
     # apply_settings needs get_view_for_index; get_view_for_index needs apply_settings callback
@@ -111,7 +122,7 @@ def main(page: ft.Page):
         routing.apply_settings(page, get_view_for_index=get_view_for_index)
 
     get_view_for_index = routing.make_get_view_for_index(page, apply_settings_callback=apply_settings_callback)
-    page._get_view_for_index = get_view_for_index
+    page.mrma._get_view_for_index = get_view_for_index
 
     # --- dialogs (register once; safe to call multiple times) ---
     dialogs.ensure_dialogs_registered(page, s=pt_scale, show_snack=show_snack)
@@ -135,11 +146,65 @@ def main(page: ft.Page):
         apply_settings_callback()
         navigation.show_main_dashboard(page, get_view_for_index=get_view_for_index)
 
+        # Check backup reminder
+        try:
+            import time
+            from database import set_setting, get_setting
+            from utils.ui_helpers import append_dialog
+            last_prompt_str = get_setting(page.db_connection, "ui.last_backup_prompt_unix", "0")
+            if time.time() - float(last_prompt_str) > 604800:
+                set_setting(page.db_connection, "ui.last_backup_prompt_unix", str(time.time()))
+                def _close_dlg(e):
+                    dlg.open = False
+                    page.update()
+                
+                def _go_settings(e):
+                    _close_dlg(e)
+                    page.nav_rail.selected_index = 7
+                    page.content_area.content = get_view_for_index(7)
+                    page.update()
+
+                dlg = ft.AlertDialog(
+                    title=ft.Text("Backup Reminder"),
+                    content=ft.Text("It has been over a week since your last vault backup. Would you like to export your vault to a secure ZIP file now?"),
+                    actions=[
+                        ft.TextButton("Dismiss", on_click=_close_dlg),
+                        ft.FilledButton("Go to Settings", on_click=_go_settings),
+                    ],
+                )
+                append_dialog(page, dlg)
+                dlg.open = True
+                page.update()
+        except Exception:
+            pass
+
     def on_show_recovery(recovery_key: str):
         dialogs.show_recovery_ceremony(page, recovery_key, s=pt_scale, show_snack=show_snack)
 
     def on_open_forgot_password():
         dialogs.open_forgot_password(page, s=pt_scale, show_snack=show_snack)
+
+    async def session_watchdog():
+        while True:
+            await asyncio.sleep(60) # check every minute
+            if not app_state.is_unlocked(page):
+                continue
+            
+            timeout_str = get_setting(page.db_connection, "ui.auto_lock_minutes", "15")
+            try:
+                timeout_mins = int(timeout_str)
+            except ValueError:
+                timeout_mins = 15
+                
+            if timeout_mins <= 0:
+                continue
+                
+            elapsed = time.time() - getattr(page.mrma, "_last_activity", time.time())
+            if elapsed > (timeout_mins * 60):
+                show_snack(page, f"Session expired after {timeout_mins} minutes of inactivity.", "orange")
+                logout()
+
+    page.run_task(session_watchdog)
 
     # --- login view ---
     login_view = login.build_login_view(

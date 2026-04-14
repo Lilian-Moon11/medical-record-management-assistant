@@ -35,6 +35,7 @@ import asyncio
 import tempfile
 import threading
 from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes, decrypt_bytes
+from cryptography.fernet import InvalidToken
 from utils.open_file import open_file_cross_platform
 from datetime import datetime
 from ai.ingestion import run_ingestion
@@ -45,7 +46,8 @@ from database import (
     add_document,
     delete_document,
 )
-from utils.ui_helpers import pt_scale, show_snack, make_info_button
+from database.clinical import get_pending_suggestion_count
+from utils.ui_helpers import append_dialog, pt_scale, show_snack, make_info_button
 
 
 def get_documents_view(page: ft.Page):
@@ -55,36 +57,36 @@ def get_documents_view(page: ft.Page):
         return ft.Text("No patient loaded.")
     patient_id = patient[0]
 
-    if not hasattr(page, "_doc_search_term"):
-        page._doc_search_term = ""
+    if not hasattr(page.mrma, "_doc_search_term"):
+        page.mrma._doc_search_term = ""
 
     search_field = ft.TextField(
-        value=page._doc_search_term,
+        value=page.mrma._doc_search_term,
         label="Search Records",
         prefix_icon=ft.Icons.SEARCH,
         width=300,
         dense=True,
     )
 
-    if not hasattr(page, "_delete_dialog_open"):
-        page._delete_dialog_open = False
+    if not hasattr(page.mrma, "_delete_dialog_open"):
+        page.mrma._delete_dialog_open = False
 
-    if not hasattr(page, "_pending_delete"):
-        page._pending_delete = None
+    if not hasattr(page.mrma, "_pending_delete"):
+        page.mrma._pending_delete = None
 
     def close_delete_dlg(_=None):
-        dlg = page._delete_dlg
+        dlg = page.mrma._delete_dlg
         dlg.open = False
         try:
             dlg.update()
         except Exception:
             pass
-        page._pending_delete = None
-        page._delete_dialog_open = False
+        page.mrma._pending_delete = None
+        page.mrma._delete_dialog_open = False
         page.update()
 
     def confirm_delete(_=None):
-        pending = page._pending_delete
+        pending = page.mrma._pending_delete
         if not pending:
             close_delete_dlg()
             return
@@ -106,8 +108,8 @@ def get_documents_view(page: ft.Page):
             print("DELETE ERROR:", ex)
             show_snack(page, f"Delete failed: {ex}", "red")
 
-    if not hasattr(page, "_delete_dlg") or page._delete_dlg is None:
-        page._delete_dlg = ft.AlertDialog(
+    if not hasattr(page.mrma, "_delete_dlg") or page.mrma._delete_dlg is None:
+        page.mrma._delete_dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Confirm Delete"),
             content=ft.Text(""),
@@ -117,7 +119,7 @@ def get_documents_view(page: ft.Page):
             ],
             on_dismiss=close_delete_dlg,
         )
-        page.overlay.append(page._delete_dlg)
+        append_dialog(page, page.mrma._delete_dlg)
 
     all_docs = []
 
@@ -171,14 +173,19 @@ def get_documents_view(page: ft.Page):
 
     # 3. HELPER FUNCTIONS
     async def open_doc_async(path: str | None, human_name: str = "record.pdf"):
-        if not path or not os.path.exists(path):
+        if not path:
+            show_snack(page, "File not found.", "red")
+            return
+        from core.paths import resolve_doc_path
+        resolved = str(resolve_doc_path(path))
+        if not os.path.exists(resolved):
             show_snack(page, "File not found.", "red")
             return
 
         try:
             # Decrypt to a temp PDF for viewing
             fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
-            with open(path, "rb") as f:
+            with open(resolved, "rb") as f:
                 ciphertext = f.read()
             plaintext = decrypt_bytes(fmk, ciphertext)
 
@@ -193,6 +200,8 @@ def get_documents_view(page: ft.Page):
             open_file_cross_platform(tmp_path)
 
             show_snack(page, "Opened a temporary decrypted copy (will be cleaned up later).", "orange")
+        except InvalidToken:
+            show_snack(page, "This file appears to be corrupted or was encrypted with a different key.", "red")
         except Exception as ex:
             print("OPEN ERROR:", ex)
             show_snack(page, f"Open failed: {ex}", "red")
@@ -207,13 +216,13 @@ def get_documents_view(page: ft.Page):
             return
         doc_id, name = data
 
-        if getattr(page, "_delete_dialog_open", False):
+        if getattr(page.mrma, "_delete_dialog_open", False):
             return
-        page._delete_dialog_open = True
+        page.mrma._delete_dialog_open = True
 
-        page._pending_delete = (int(doc_id), str(name))
+        page.mrma._pending_delete = (int(doc_id), str(name))
 
-        dlg = page._delete_dlg
+        dlg = page.mrma._delete_dlg
         dlg.title = ft.Text("Confirm Delete")
         dlg.content = ft.Text(
             f"Permanently delete '{name}'?\n\n"
@@ -299,7 +308,7 @@ def get_documents_view(page: ft.Page):
                 pass
 
     def on_search_change(e: ft.ControlEvent):
-        page._doc_search_term = e.control.value
+        page.mrma._doc_search_term = e.control.value
         refresh_table(e.control.value, update_ui=True)
 
     search_field.on_change = on_search_change
@@ -379,17 +388,17 @@ def get_documents_view(page: ft.Page):
 
                     # Refresh the review button in-place on whatever tab is active.
                     # If Overview is showing, update its live button directly.
-                    if hasattr(page, "_refresh_overview_review_btn"):
+                    if hasattr(page.mrma, "_refresh_overview_review_btn"):
                         try:
-                            page._refresh_overview_review_btn()
+                            page.mrma._refresh_overview_review_btn()
                         except Exception:
                             pass
                     # If user is on a different tab, rebuild that tab so its badge appears too.
-                    if hasattr(page, "_get_view_for_index") and getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
+                    if hasattr(page.mrma, "_get_view_for_index") and getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
                         try:
                             idx = page.nav_rail.selected_index
                             if idx != 0:  # Overview already updated itself above
-                                page.content_area.content = page._get_view_for_index(idx)
+                                page.content_area.content = page.mrma._get_view_for_index(idx)
                                 page.content_area.update()
                         except Exception as refresh_ex:
                             print(f"Auto-refresh failed: {refresh_ex}")
@@ -414,9 +423,9 @@ def get_documents_view(page: ft.Page):
                         file_name=_uploaded_file_name,
                         parsed_text=parsed_text,
                     )
-                    if matched and hasattr(page, "_refresh_requests_panel"):
+                    if matched and hasattr(page.mrma, "_refresh_requests_panel"):
                         try:
-                            page._refresh_requests_panel()
+                            page.mrma._refresh_requests_panel()
                         except Exception:
                             pass
                 except Exception as match_ex:
@@ -429,21 +438,10 @@ def get_documents_view(page: ft.Page):
             show_snack(page, f"Error: {str(ex)}", "red")
 
     # 7. INITIAL LAYOUT BUILD
-    refresh_table(page._doc_search_term, update_ui=False)
+    refresh_table(page.mrma._doc_search_term, update_ui=False)
 
     # --- AI Inbox badge ---
-    def _count_pending():
-        try:
-            cur = page.db_connection.cursor()
-            cur.execute(
-                "SELECT COUNT(*) FROM ai_extraction_inbox WHERE patient_id=? AND status='pending'",
-                (patient_id,),
-            )
-            return cur.fetchone()[0]
-        except:
-            return 0
-
-    pending_count = _count_pending()
+    pending_count = get_pending_suggestion_count(page.db_connection, patient_id)
     review_btn = ft.Container()
     if pending_count > 0:
         from ui.ai_review_dialog import show_ai_review_dialog

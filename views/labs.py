@@ -28,7 +28,7 @@ import flet as ft
 import flet.canvas as cv
 import re
 from datetime import date
-from utils.ui_helpers import show_snack, themed_panel, pt_scale, make_info_button
+from utils.ui_helpers import append_dialog, show_snack, themed_panel, pt_scale, make_info_button
 from database import (
     # Reports
     list_lab_reports,
@@ -57,22 +57,22 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     # Stable state holders
     # ----------------------------
-    if not hasattr(page, "_labs_selected_test_name"):
-        page._labs_selected_test_name = None  # str | None
-    if not hasattr(page, "_editing_lab_result_id"):
-        page._editing_lab_result_id = None
-    if not hasattr(page, "_editing_lab_result_report_id"):
-        page._editing_lab_result_report_id = None
-    if not hasattr(page, "_pending_lab_result_delete"):
-        page._pending_lab_result_delete = None
-    if not hasattr(page, "_labs_report_cache"):
-        page._labs_report_cache = {}
-    if not hasattr(page, "_labs_category"):
-        page._labs_category = "Vitals"
-    if not hasattr(page, "_labs_results_sort_col"):
-        page._labs_results_sort_col = 0  # default: sort by Date
-    if not hasattr(page, "_labs_results_sort_asc"):
-        page._labs_results_sort_asc = False  # newest first
+    if not hasattr(page.mrma, "_labs_selected_test_name"):
+        page.mrma._labs_selected_test_name = None  # str | None
+    if not hasattr(page.mrma, "_editing_lab_result_id"):
+        page.mrma._editing_lab_result_id = None
+    if not hasattr(page.mrma, "_editing_lab_result_report_id"):
+        page.mrma._editing_lab_result_report_id = None
+    if not hasattr(page.mrma, "_pending_lab_result_delete"):
+        page.mrma._pending_lab_result_delete = None
+    if not hasattr(page.mrma, "_labs_report_cache"):
+        page.mrma._labs_report_cache = {}
+    if not hasattr(page.mrma, "_labs_category"):
+        page.mrma._labs_category = "Vitals"
+    if not hasattr(page.mrma, "_labs_results_sort_col"):
+        page.mrma._labs_results_sort_col = 0  # default: sort by Date
+    if not hasattr(page.mrma, "_labs_results_sort_asc"):
+        page.mrma._labs_results_sort_asc = False  # newest first
 
     # ----------------------------
     # Helpers
@@ -324,20 +324,20 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     # Historical results table
     # ----------------------------
-    _show_source = bool(getattr(page, "_show_source", False))
-    _show_updated = bool(getattr(page, "_show_updated", False))
+    _show_source = bool(getattr(page.mrma, "_show_source", False))
+    _show_updated = bool(getattr(page.mrma, "_show_updated", False))
 
     # ----------------------------
     # Sort handler for results table
     # ----------------------------
     def _on_results_sort(e: ft.DataColumnSortEvent):
-        if page._labs_results_sort_col == e.column_index:
-            page._labs_results_sort_asc = not page._labs_results_sort_asc
+        if page.mrma._labs_results_sort_col == e.column_index:
+            page.mrma._labs_results_sort_asc = not page.mrma._labs_results_sort_asc
         else:
-            page._labs_results_sort_col = e.column_index
-            page._labs_results_sort_asc = True
-        results_table.sort_column_index = page._labs_results_sort_col
-        results_table.sort_ascending = page._labs_results_sort_asc
+            page.mrma._labs_results_sort_col = e.column_index
+            page.mrma._labs_results_sort_asc = True
+        results_table.sort_column_index = page.mrma._labs_results_sort_col
+        results_table.sort_ascending = page.mrma._labs_results_sort_asc
         refresh_for_test()  # re-fetch + re-sort + re-render
 
     results_cols = [
@@ -358,8 +358,8 @@ def get_labs_view(page: ft.Page):
     results_table = ft.DataTable(
         columns=results_cols,
         rows=[],
-        sort_column_index=page._labs_results_sort_col,
-        sort_ascending=page._labs_results_sort_asc,
+        sort_column_index=page.mrma._labs_results_sort_col,
+        sort_ascending=page.mrma._labs_results_sort_asc,
         column_spacing=pt_scale(page, 14),
         heading_row_height=pt_scale(page, 40),
         data_row_min_height=pt_scale(page, 40),
@@ -376,31 +376,31 @@ def get_labs_view(page: ft.Page):
     # Info dialog (coding/details with source doc)
     # ----------------------------
     def _ensure_result_info_dialog():
-        if getattr(page, "_lab_result_info_dlg", None) is not None:
-            return page._lab_result_info_dlg
+        if getattr(page.mrma, "_lab_result_info_dlg", None) is not None:
+            return page.mrma._lab_result_info_dlg
 
-        page._lab_result_info_title = ft.Text("Measurement Details", weight="bold")
-        page._lab_result_info_body = ft.Column([], tight=True, scroll=True)
+        page.mrma._lab_result_info_title = ft.Text("Measurement Details", weight="bold")
+        page.mrma._lab_result_info_body = ft.Column([], tight=True, scroll=True)
 
         def _close(_=None):
-            page._lab_result_info_dlg.open = False
+            page.mrma._lab_result_info_dlg.open = False
             page.update()
 
-        page._lab_result_info_dlg = ft.AlertDialog(
+        page.mrma._lab_result_info_dlg = ft.AlertDialog(
             modal=True,
-            title=page._lab_result_info_title,
+            title=page.mrma._lab_result_info_title,
             content=ft.Container(
                 width=pt_scale(page, 520),
-                content=page._lab_result_info_body,
+                content=page.mrma._lab_result_info_body,
             ),
             actions=[ft.FilledButton("Close", icon=ft.Icons.CLOSE, on_click=_close)],
             actions_alignment=ft.MainAxisAlignment.END,
             on_dismiss=_close,
         )
 
-        page.overlay.append(page._lab_result_info_dlg)
+        append_dialog(page, page.mrma._lab_result_info_dlg)
         page.update()
-        return page._lab_result_info_dlg
+        return page.mrma._lab_result_info_dlg
 
     def open_result_info(result_row):
         """
@@ -448,8 +448,8 @@ def get_labs_view(page: ft.Page):
             except Exception:
                 source_text = f"Source: Document #{source_document_id}"
 
-        page._lab_result_info_title.value = test_name or f"Result #{result_id}"
-        page._lab_result_info_body.controls = [
+        page.mrma._lab_result_info_title.value = test_name or f"Result #{result_id}"
+        page.mrma._lab_result_info_body.controls = [
             ft.Text(f"Value: {value_display} {unit or ''}".strip()),
             ft.Text(f"Flag: {_flag_result(flag)}"),
             ft.Text(f"Date: {result_date or ''}".strip()),
@@ -552,7 +552,7 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     def refresh_for_test(test_name: str | None = None):
         """Load all results for the selected test, update chart + table."""
-        tn = test_name or page._labs_selected_test_name
+        tn = test_name or page.mrma._labs_selected_test_name
         if not tn:
             chart_container.content = ft.Text(
                 "Select a metric from the menu.",
@@ -570,14 +570,14 @@ def get_labs_view(page: ft.Page):
             return
 
         try:
-            rows = list_all_results_for_test(page.db_connection, patient_id, tn, category=page._labs_category)
+            rows = list_all_results_for_test(page.db_connection, patient_id, tn, category=page.mrma._labs_category)
         except Exception as ex:
             show_snack(page, f"Load results failed: {ex}", "red")
             rows = []
 
         # Sort rows before rendering
-        col = page._labs_results_sort_col
-        asc = page._labs_results_sort_asc
+        col = page.mrma._labs_results_sort_col
+        asc = page.mrma._labs_results_sort_asc
 
         def _results_sort_key(x):
             # x indices: 0=result_id, 2=value_text, 3=value_num, 4=unit, 9=flag, 10=result_date, 14=collected_date
@@ -624,20 +624,20 @@ def get_labs_view(page: ft.Page):
         """Populate the test menu sidebar with distinct test names."""
         try:
             names = list_distinct_test_names(
-                page.db_connection, patient_id, search=search, category=page._labs_category
+                page.db_connection, patient_id, search=search, category=page.mrma._labs_category
             )
         except Exception as ex:
             show_snack(page, f"Load tests failed: {ex}", "red")
             names = []
 
         test_list_view.controls = []
-        selected = page._labs_selected_test_name
+        selected = page.mrma._labs_selected_test_name
 
         for name in names:
             is_selected = name == selected
 
             def _on_click(e, n=name):
-                page._labs_selected_test_name = n
+                page.mrma._labs_selected_test_name = n
                 add_data_btn.disabled = False
                 refresh_for_test(n)
                 _build_test_menu(test_search_field.value or None)
@@ -719,28 +719,28 @@ def get_labs_view(page: ft.Page):
     # Dialog: Add Lab Data (add a result to an existing or new report)
     # ----------------------------
     def _ensure_result_edit_dialog():
-        if getattr(page, "_lab_result_edit_dlg", None) is not None:
-            return page._lab_result_edit_dlg
+        if getattr(page.mrma, "_lab_result_edit_dlg", None) is not None:
+            return page.mrma._lab_result_edit_dlg
 
-        page._lx_test = ft.TextField(label="Metric / Test name*", autofocus=True)
-        page._lx_value_text = ft.TextField(label="Value (text)*")
-        page._lx_unit = ft.TextField(label="Unit")
-        page._lx_ref_range = ft.TextField(label="Reference range (e.g. 70-130)")
-        page._lx_flag = ft.TextField(label="Abnormal flag (H/L/A/N)")
-        page._lx_date = ft.TextField(label="Result date (YYYY-MM-DD)")
-        page._lx_notes = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
-        page._lx_report_selector = ft.Dropdown(
+        page.mrma._lx_test = ft.TextField(label="Metric / Test name*", autofocus=True)
+        page.mrma._lx_value_text = ft.TextField(label="Value (text)*")
+        page.mrma._lx_unit = ft.TextField(label="Unit")
+        page.mrma._lx_ref_range = ft.TextField(label="Reference range (e.g. 70-130)")
+        page.mrma._lx_flag = ft.TextField(label="Abnormal flag (H/L/A/N)")
+        page.mrma._lx_date = ft.TextField(label="Result date (YYYY-MM-DD)")
+        page.mrma._lx_notes = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
+        page.mrma._lx_report_selector = ft.Dropdown(
             label="Attach to report",
             width=pt_scale(page, 460),
         )
 
         def _close(_=None):
-            page._lab_result_edit_dlg.open = False
+            page.mrma._lab_result_edit_dlg.open = False
             page.update()
 
         def _save(_=None):
-            test_name_val = (page._lx_test.value or "").strip()
-            value_text = (page._lx_value_text.value or "").strip()
+            test_name_val = (page.mrma._lx_test.value or "").strip()
+            value_text = (page.mrma._lx_value_text.value or "").strip()
 
             if not test_name_val:
                 show_snack(page, "Test name is required.", "red")
@@ -752,11 +752,11 @@ def get_labs_view(page: ft.Page):
             try:
                 # Get or create report
                 report_id = None
-                if page._lx_report_selector.value:
-                    report_id = int(page._lx_report_selector.value)
+                if page.mrma._lx_report_selector.value:
+                    report_id = int(page.mrma._lx_report_selector.value)
 
-                result_id = getattr(page, "_editing_lab_result_id", None)
-                report_id_for_edit = getattr(page, "_editing_lab_result_report_id", None)
+                result_id = getattr(page.mrma, "_editing_lab_result_id", None)
+                report_id_for_edit = getattr(page.mrma, "_editing_lab_result_report_id", None)
 
                 if result_id is not None:
                     # Editing existing result
@@ -772,17 +772,17 @@ def get_labs_view(page: ft.Page):
                         reported_date=today,
                     )
 
-                unit = (page._lx_unit.value or "").strip() or None
-                flag = (page._lx_flag.value or "").strip() or None
-                notes = (page._lx_notes.value or "").strip() or None
+                unit = (page.mrma._lx_unit.value or "").strip() or None
+                flag = (page.mrma._lx_flag.value or "").strip() or None
+                notes = (page.mrma._lx_notes.value or "").strip() or None
                 value_num = _parse_value_num(value_text)
 
-                rdate = (page._lx_date.value or "").strip() or None
+                rdate = (page.mrma._lx_date.value or "").strip() or None
                 if not rdate:
                     rdate = date.today().isoformat()
 
                 # Parse ref range text into low/high
-                ref_range_raw = (page._lx_ref_range.value or "").strip() or None
+                ref_range_raw = (page.mrma._lx_ref_range.value or "").strip() or None
                 ref_low = None
                 ref_high = None
                 if ref_range_raw:
@@ -810,7 +810,7 @@ def get_labs_view(page: ft.Page):
                         abnormal_flag=flag,
                         result_date=rdate,
                         notes=notes,
-                        category=page._labs_category,
+                        category=page.mrma._labs_category,
                     )
                     show_snack(page, f"Result added (#{new_id}).", "blue")
                 else:
@@ -830,7 +830,7 @@ def get_labs_view(page: ft.Page):
                         abnormal_flag=flag,
                         result_date=rdate,
                         notes=notes,
-                        category=page._labs_category,
+                        category=page.mrma._labs_category,
                     )
                     show_snack(
                         page,
@@ -841,25 +841,25 @@ def get_labs_view(page: ft.Page):
                 _close()
                 # Refresh test menu and current test view
                 _build_test_menu(test_search_field.value or None)
-                page._labs_selected_test_name = test_name_val
+                page.mrma._labs_selected_test_name = test_name_val
                 refresh_for_test(test_name_val)
 
             except Exception as ex:
                 show_snack(page, f"Save result failed: {ex}", "red")
 
-        page._lab_result_edit_dlg = ft.AlertDialog(
+        page.mrma._lab_result_edit_dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Measurement / Result"),
             content=ft.Container(
                 width=pt_scale(page, 520),
                 content=ft.Column(
                     [
-                        page._lx_test,
-                        ft.Row([page._lx_value_text, page._lx_unit], wrap=True),
-                        page._lx_ref_range,
-                        ft.Row([page._lx_flag, page._lx_date], wrap=True),
-                        page._lx_notes,
-                        page._lx_report_selector,
+                        page.mrma._lx_test,
+                        ft.Row([page.mrma._lx_value_text, page.mrma._lx_unit], wrap=True),
+                        page.mrma._lx_ref_range,
+                        ft.Row([page.mrma._lx_flag, page.mrma._lx_date], wrap=True),
+                        page.mrma._lx_notes,
+                        page.mrma._lx_report_selector,
                     ],
                     tight=True,
                     scroll=True,
@@ -873,9 +873,9 @@ def get_labs_view(page: ft.Page):
             on_dismiss=_close,
         )
 
-        page.overlay.append(page._lab_result_edit_dlg)
+        append_dialog(page, page.mrma._lab_result_edit_dlg)
         page.update()
-        return page._lab_result_edit_dlg
+        return page.mrma._lab_result_edit_dlg
 
     def _populate_report_dropdown():
         """Fill the report dropdown with existing reports."""
@@ -897,27 +897,27 @@ def get_labs_view(page: ft.Page):
             label = " - ".join(label_parts) if label_parts else f"Report #{rid}"
             options.append(ft.dropdown.Option(key=str(rid), text=label))
 
-        page._lx_report_selector.options = options
+        page.mrma._lx_report_selector.options = options
 
     def open_add_lab_data(_=None):
-        selected_test = page._labs_selected_test_name or ""
+        selected_test = page.mrma._labs_selected_test_name or ""
 
-        page._editing_lab_result_id = None
-        page._editing_lab_result_report_id = None
+        page.mrma._editing_lab_result_id = None
+        page.mrma._editing_lab_result_report_id = None
 
         dlg = _ensure_result_edit_dialog()
         dlg.title = ft.Text("Add Lab Data")
 
-        page._lx_test.value = selected_test
-        page._lx_value_text.value = ""
-        page._lx_unit.value = ""
-        page._lx_ref_range.value = ""
-        page._lx_flag.value = ""
-        page._lx_date.value = ""
-        page._lx_notes.value = ""
+        page.mrma._lx_test.value = selected_test
+        page.mrma._lx_value_text.value = ""
+        page.mrma._lx_unit.value = ""
+        page.mrma._lx_ref_range.value = ""
+        page.mrma._lx_flag.value = ""
+        page.mrma._lx_date.value = ""
+        page.mrma._lx_notes.value = ""
 
         _populate_report_dropdown()
-        page._lx_report_selector.value = ""
+        page.mrma._lx_report_selector.value = ""
 
         dlg.open = True
         page.update()
@@ -932,22 +932,22 @@ def get_labs_view(page: ft.Page):
             _c, _u,
         ) = result_row
 
-        page._editing_lab_result_id = int(result_id)
-        page._editing_lab_result_report_id = int(report_id)
+        page.mrma._editing_lab_result_id = int(result_id)
+        page.mrma._editing_lab_result_report_id = int(report_id)
 
         dlg = _ensure_result_edit_dialog()
         dlg.title = ft.Text("Edit Result")
 
-        page._lx_test.value = test_name or ""
-        page._lx_value_text.value = value_text or ""
-        page._lx_unit.value = unit or ""
-        page._lx_ref_range.value = ref_range_text or ""
-        page._lx_flag.value = flag or ""
-        page._lx_date.value = result_date or ""
-        page._lx_notes.value = notes or ""
+        page.mrma._lx_test.value = test_name or ""
+        page.mrma._lx_value_text.value = value_text or ""
+        page.mrma._lx_unit.value = unit or ""
+        page.mrma._lx_ref_range.value = ref_range_text or ""
+        page.mrma._lx_flag.value = flag or ""
+        page.mrma._lx_date.value = result_date or ""
+        page.mrma._lx_notes.value = notes or ""
 
         _populate_report_dropdown()
-        page._lx_report_selector.value = str(report_id)
+        page.mrma._lx_report_selector.value = str(report_id)
 
         dlg.open = True
         page.update()
@@ -956,18 +956,18 @@ def get_labs_view(page: ft.Page):
     # Dialog: Confirm Delete Result
     # ----------------------------
     def _ensure_result_delete_dialog():
-        if getattr(page, "_lab_result_delete_dlg", None) is not None:
-            return page._lab_result_delete_dlg
+        if getattr(page.mrma, "_lab_result_delete_dlg", None) is not None:
+            return page.mrma._lab_result_delete_dlg
 
-        page._lab_result_delete_text = ft.Text("")
+        page.mrma._lab_result_delete_text = ft.Text("")
 
         def _close(_=None):
-            page._lab_result_delete_dlg.open = False
-            page._pending_lab_result_delete = None
+            page.mrma._lab_result_delete_dlg.open = False
+            page.mrma._pending_lab_result_delete = None
             page.update()
 
         def _confirm(_=None):
-            pending = page._pending_lab_result_delete
+            pending = page.mrma._pending_lab_result_delete
             if not pending:
                 _close()
                 return
@@ -988,10 +988,10 @@ def get_labs_view(page: ft.Page):
             except Exception as ex:
                 show_snack(page, f"Delete result failed: {ex}", "red")
 
-        page._lab_result_delete_dlg = ft.AlertDialog(
+        page.mrma._lab_result_delete_dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Confirm Delete"),
-            content=page._lab_result_delete_text,
+            content=page.mrma._lab_result_delete_text,
             actions=[
                 ft.TextButton("Cancel", on_click=_close),
                 ft.FilledButton("Delete", icon=ft.Icons.DELETE, on_click=_confirm),
@@ -1000,14 +1000,14 @@ def get_labs_view(page: ft.Page):
             on_dismiss=_close,
         )
 
-        page.overlay.append(page._lab_result_delete_dlg)
+        append_dialog(page, page.mrma._lab_result_delete_dlg)
         page.update()
-        return page._lab_result_delete_dlg
+        return page.mrma._lab_result_delete_dlg
 
     def open_delete_result(result_id: int, label: str):
-        page._pending_lab_result_delete = (int(result_id), label or "")
+        page.mrma._pending_lab_result_delete = (int(result_id), label or "")
         dlg = _ensure_result_delete_dialog()
-        page._lab_result_delete_text.value = f'Delete result "{label}"?'
+        page.mrma._lab_result_delete_text.value = f'Delete result "{label}"?'
         dlg.open = True
         page.update()
 
@@ -1016,9 +1016,9 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     _build_test_menu()
 
-    if page._labs_selected_test_name:
+    if page.mrma._labs_selected_test_name:
         add_data_btn.disabled = False
-        refresh_for_test(page._labs_selected_test_name)
+        refresh_for_test(page.mrma._labs_selected_test_name)
     else:
         chart_container.content = ft.Text(
             "Select a test from the menu to view trends.",
@@ -1051,8 +1051,8 @@ def get_labs_view(page: ft.Page):
     )
 
     def _on_tab_change(is_vitals):
-        page._labs_category = "Vitals" if is_vitals else "Lab"
-        page._labs_selected_test_name = None
+        page.mrma._labs_category = "Vitals" if is_vitals else "Lab"
+        page.mrma._labs_selected_test_name = None
         _build_test_menu()
         refresh_for_test(None)
         
@@ -1068,7 +1068,7 @@ def get_labs_view(page: ft.Page):
         tab_labs.update()
         page.update()
 
-    is_vitals_start = (page._labs_category == "Vitals")
+    is_vitals_start = (page.mrma._labs_category == "Vitals")
     base_color = ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY
 
     tab_vitals = ft.Container(

@@ -5,7 +5,7 @@ import sys
 # Fix paths to allow importing project modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-class TestPhase3Fixes(unittest.TestCase):
+class TestPhase2BFixes(unittest.TestCase):
 
     def test_get_unprocessed_docs_name(self):
         """Verify _get_unindexed_docs is properly renamed to _get_unprocessed_docs."""

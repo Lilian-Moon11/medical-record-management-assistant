@@ -21,9 +21,9 @@
 # - Category tables (`CategoryPanel`) for single-value fields (core + custom),
 #   supporting label edits for custom fields, value persistence, and guarded
 #   deletion via dialogs registered in `ui.dialogs.ensure_patient_info_dialogs`.
-# - Local per-page UI state (`page._field_vis`, `page._panel_vis`) to keep row-
+# - Local per-page UI state (`page.mrma._field_vis`, `page.mrma._panel_vis`) to keep row-
 #   level and panel-level reveal states stable across refresh/rerender, plus an
-#   optional provenance display (`page._show_provenance`).
+#   optional provenance display (`page.mrma._show_provenance`).
 #
 # Data + security/UX behaviors:
 # - Uses DB field definitions + patient field map to drive UI composition.
@@ -53,6 +53,7 @@ from database import (
     get_profile,
 )
 from utils.ui_helpers import (
+    append_dialog,
     pt_scale,
     themed_panel,
     show_snack,
@@ -70,15 +71,15 @@ from ui.dialogs import ensure_patient_info_dialogs
 # -----------------------------------------------------------------------------
 def _ensure_sets(page: ft.Page) -> None:
     # Tracks individual row visibility: {"core.name": True, "allergies_1234": False}
-    if not hasattr(page, "_field_vis"):
-        page._field_vis = {}
+    if not hasattr(page.mrma, "_field_vis"):
+        page.mrma._field_vis = {}
     # Tracks the last state of a parent panel: {"section.demographics": True}
-    if not hasattr(page, "_panel_vis"):
-        page._panel_vis = {}
-    if not hasattr(page, "_show_source"):
-        page._show_source = False
-    if not hasattr(page, "_show_updated"):
-        page._show_updated = False
+    if not hasattr(page.mrma, "_panel_vis"):
+        page.mrma._panel_vis = {}
+    if not hasattr(page.mrma, "_show_source"):
+        page.mrma._show_source = False
+    if not hasattr(page.mrma, "_show_updated"):
+        page.mrma._show_updated = False
 
 
 def _safe_update(ctrl: Any) -> None:
@@ -107,8 +108,8 @@ def _migrate_surgeries(items: List[dict]) -> List[dict]:
 
 
 def _make_list_delete_dialog(page: ft.Page) -> ft.AlertDialog:
-    if hasattr(page, "_list_delete_dlg"):
-        return page._list_delete_dlg
+    if hasattr(page.mrma, "_list_delete_dlg"):
+        return page.mrma._list_delete_dlg
 
     dlg = ft.AlertDialog(
         modal=False,
@@ -119,8 +120,8 @@ def _make_list_delete_dialog(page: ft.Page) -> ft.AlertDialog:
             ft.FilledButton("Delete", icon=ft.Icons.DELETE),
         ],
     )
-    page._list_delete_dlg = dlg
-    page.overlay.append(dlg)
+    page.mrma._list_delete_dlg = dlg
+    append_dialog(page, dlg)
     return dlg
 
 
@@ -191,7 +192,7 @@ class ListEditorBody(ft.Column):
         self._updated_at = updated_at
 
         _ensure_sets(page)
-        self.panel_revealed = self._page._panel_vis.get(self.field_key, True)
+        self.panel_revealed = self._page.mrma._panel_vis.get(self.field_key, True)
 
         # Sort state
         self._sort_col_key: str | None = None
@@ -272,7 +273,7 @@ class ListEditorBody(ft.Column):
             item["_id"] = item_id
             vis_key = f"{self.field_key}_{item_id}"
             default_vis = not self.is_section_sensitive
-            revealed = self._page._field_vis.get(vis_key, default_vis)
+            revealed = self._page.mrma._field_vis.get(vis_key, default_vis)
 
             ctrl_map: dict = {}
             cells: List[ft.DataCell] = []
@@ -320,14 +321,19 @@ class ListEditorBody(ft.Column):
                                 (self.patient_id, fname),
                             )
                             row = cur.fetchone()
-                            if not row or not row[0] or not os.path.exists(row[0]):
+                            if not row or not row[0]:
+                                show_snack(self._page, "Source file not found.", "red")
+                                return
+                            from core.paths import resolve_doc_path
+                            resolved = str(resolve_doc_path(row[0]))
+                            if not os.path.exists(resolved):
                                 show_snack(self._page, "Source file not found.", "red")
                                 return
                             fmk = get_or_create_file_master_key(
                                 self._page.db_connection,
                                 dmk_raw=self._page.db_key_raw,
                             )
-                            with open(row[0], "rb") as f:
+                            with open(resolved, "rb") as f:
                                 ciphertext = f.read()
                             plaintext = decrypt_bytes(fmk, ciphertext)
                             _, ext = os.path.splitext(fname)
@@ -466,7 +472,7 @@ class ListEditorBody(ft.Column):
         if not self.is_section_sensitive:
             return
         self.panel_revealed = not self.panel_revealed
-        self._page._panel_vis[self.field_key] = self.panel_revealed
+        self._page.mrma._panel_vis[self.field_key] = self.panel_revealed
         if self.eye_btn:
             self.eye_btn.icon = (
                 ft.Icons.VISIBILITY_OFF if self.panel_revealed else ft.Icons.VISIBILITY
@@ -478,7 +484,7 @@ class ListEditorBody(ft.Column):
             if not iid:
                 continue
             vis_key = f"{self.field_key}_{iid}"
-            self._page._field_vis[vis_key] = self.panel_revealed
+            self._page.mrma._field_vis[vis_key] = self.panel_revealed
             for k, _ in self.columns:
                 ctrl = self._ctrl_refs.get(iid, {}).get(k)
                 if isinstance(ctrl, ft.TextField):
@@ -487,9 +493,9 @@ class ListEditorBody(ft.Column):
 
     def _toggle_row_reveal(self, item_id: str) -> None:
         vis_key = f"{self.field_key}_{item_id}"
-        current = self._page._field_vis.get(vis_key, not self.is_section_sensitive)
+        current = self._page.mrma._field_vis.get(vis_key, not self.is_section_sensitive)
         new_state = not current
-        self._page._field_vis[vis_key] = new_state
+        self._page.mrma._field_vis[vis_key] = new_state
         for k, _ in self.columns:
             ctrl = self._ctrl_refs.get(item_id, {}).get(k)
             if isinstance(ctrl, ft.TextField):
@@ -556,11 +562,11 @@ class CategoryPanel(ft.Column):
         self._defs_list = list(defs_list)  # store for re-sort
 
         _ensure_sets(page)
-        self._show_source = bool(getattr(page, "_show_source", False))
-        self._show_updated = bool(getattr(page, "_show_updated", False))
+        self._show_source = bool(getattr(page.mrma, "_show_source", False))
+        self._show_updated = bool(getattr(page.mrma, "_show_updated", False))
         
         self.panel_key = f"cat_{slugify_label(self.category_name)}"
-        self.panel_revealed = self._page._panel_vis.get(self.panel_key, True)
+        self.panel_revealed = self._page.mrma._panel_vis.get(self.panel_key, True)
 
         # Per-panel sort state stored on page
         _sc_key = f"_hrsort_{self.panel_key}_col"
@@ -666,7 +672,7 @@ class CategoryPanel(ft.Column):
             return
             
         self.panel_revealed = not self.panel_revealed
-        self._page._panel_vis[self.panel_key] = self.panel_revealed
+        self._page.mrma._panel_vis[self.panel_key] = self.panel_revealed
 
         if self.cat_eye_btn:
             self.cat_eye_btn.icon = ft.Icons.VISIBILITY_OFF if self.panel_revealed else ft.Icons.VISIBILITY
@@ -714,7 +720,7 @@ class CategoryPanel(ft.Column):
             field_tf = ft.TextField(value=clean_lbl(label), dense=True, width=pt_scale(self._page, 200))
 
         default_vis = not self.is_section_sensitive
-        row_revealed = self._page._field_vis.get(row_id, default_vis)
+        row_revealed = self._page.mrma._field_vis.get(row_id, default_vis)
 
         can_be_password = self.is_section_sensitive
         value_tf = ft.TextField(
@@ -733,7 +739,7 @@ class CategoryPanel(ft.Column):
             eye_btn = make_eye_btn(self._page, row_revealed)
 
             def set_revealed(state: bool):
-                self._page._field_vis[row_id] = state
+                self._page.mrma._field_vis[row_id] = state
                 value_tf.password = not state
                 eye_btn.icon = ft.Icons.VISIBILITY_OFF if state else ft.Icons.VISIBILITY
                 eye_btn.tooltip = "Hide" if state else "Reveal"
@@ -741,7 +747,7 @@ class CategoryPanel(ft.Column):
                 _safe_update(eye_btn)
 
             def toggle_row_eye(_e):
-                current = self._page._field_vis.get(row_id, default_vis)
+                current = self._page.mrma._field_vis.get(row_id, default_vis)
                 set_revealed(not current)
 
             eye_btn.on_click = toggle_row_eye
@@ -789,7 +795,7 @@ class CategoryPanel(ft.Column):
                 # Update the row's tracking ID from 'new_xxxx' to the actual DB key
                 old_id = row_id
                 row_id = fk
-                self._page._field_vis[row_id] = self._page._field_vis.pop(old_id, True)
+                self._page.mrma._field_vis[row_id] = self._page.mrma._field_vis.pop(old_id, True)
             else:
                 # Update the label of an existing custom field (Core fields are read-only)
                 if not is_core:
@@ -826,7 +832,7 @@ class CategoryPanel(ft.Column):
                 self.table.rows.remove(row)
                 _safe_update(self.table)
             else:
-                self._page._open_delete_dialog(field_key, field_tf.value, row, self.table)
+                self._page.mrma._open_delete_dialog(field_key, field_tf.value, row, self.table)
 
         del_btn.on_click = delete_click
 
@@ -870,7 +876,55 @@ def get_health_record_view(page: ft.Page):
         else:
             page.update()
 
-    page._health_record_refresh = refresh
+    page.mrma._health_record_refresh = refresh
+
+    search_field = ft.TextField(
+        label="Search Health Record",
+        prefix_icon=ft.Icons.SEARCH,
+        dense=True,
+        width=pt_scale(page, 340),
+        value=getattr(page.mrma, "_hr_search_text", "")
+    )
+
+    def do_search(_=None):
+        page.mrma._hr_search_text = search_field.value
+        refresh()
+
+    search_field.on_change = do_search
+    
+    st = getattr(page.mrma, "_hr_search_text", "").lower()
+
+    def _filter_json(items):
+        if not st: return items
+        return [i for i in items if any(st in str(v).lower() for v in i.values())]
+
+    def _filter_grouped(d):
+        if not st: return True
+        return st in str(d[1]).lower() or st in str(value_map.get(d[0], {}).get("value", "")).lower()
+
+    search_field = ft.TextField(
+        label="Search Health Record",
+        prefix_icon=ft.Icons.SEARCH,
+        dense=True,
+        width=pt_scale(page, 340),
+        value=getattr(page.mrma, "_hr_search_text", "")
+    )
+
+    def do_search(_=None):
+        page.mrma._hr_search_text = search_field.value
+        refresh()
+
+    search_field.on_submit = do_search
+    
+    st = getattr(page.mrma, "_hr_search_text", "").lower()
+
+    def _filter_json(items):
+        if not st: return items
+        return [i for i in items if any(st in str(v).lower() for v in i.values())]
+
+    def _filter_grouped(d):
+        if not st: return True
+        return st in str(d[1]).lower() or st in str(value_map.get(d[0], {}).get("value", "")).lower()
 
     ensure_patient_info_dialogs(page, refresh)
     ensure_field_definition(page.db_connection, "conditions.list", "Conditions", data_type="json", category="History")
@@ -885,11 +939,11 @@ def get_health_record_view(page: ft.Page):
     insurance_key = "insurance.list"
 
     def open_delete_dialog(fk, lbl, row_ref, table_ref):
-        page._delete_inline_row = row_ref
-        page._delete_inline_table = table_ref
+        page.mrma._delete_inline_row = row_ref
+        page.mrma._delete_inline_table = table_ref
         page.open_delete_field_dialog(fk, clean_lbl(lbl))
 
-    page._open_delete_dialog = open_delete_dialog
+    page.mrma._open_delete_dialog = open_delete_dialog
 
     defs = list_field_definitions(page.db_connection)
     value_map = get_patient_field_map(page.db_connection, patient_id)
@@ -944,153 +998,164 @@ def get_health_record_view(page: ft.Page):
 
     grouped["Demographics"].sort(key=_demo_sort)
 
+    for cat in grouped:
+        grouped[cat] = [d for d in grouped[cat] if _filter_grouped(d)]
+
     sections: List[Any] = []
 
-    demographics_panel = themed_panel(
-        page,
-        CategoryPanel(
-            page, 
-            patient_id, 
-            "Demographics", 
-            grouped["Demographics"], 
-            value_map,
-            is_section_sensitive=is_sens("section.demographics")
-        ),
-        padding=pt_scale(page, 12),
-    )
-    sections += [demographics_panel, ft.Container(height=pt_scale(page, 10))]
+    if grouped["Demographics"]:
+        demographics_panel = themed_panel(
+            page,
+            CategoryPanel(
+                page, 
+                patient_id, 
+                "Demographics", 
+                grouped["Demographics"], 
+                value_map,
+                is_section_sensitive=is_sens("section.demographics")
+            ),
+            padding=pt_scale(page, 12),
+        )
+        sections += [demographics_panel, ft.Container(height=pt_scale(page, 10))]
 
     def _list_meta(key):
         """Extract source and updated_at from value_map for a list field."""
         entry = value_map.get(key, {}) or {}
         return entry.get("source", ""), entry.get("updated_at", "")
 
-    allergies_panel = themed_panel(
-        page,
-        ListEditorBody(
+    all_list = _filter_json(_load_json_list((value_map.get(allergies_key, {}) or {}).get("value")))
+    if all_list or not st:
+        allergies_panel = themed_panel(
             page,
-            patient_id,
-            "Allergies / Intolerances",
-            allergies_key,
-            _load_json_list((value_map.get(allergies_key, {}) or {}).get("value")),
-            [("substance", "Substance"), ("reaction", "Reaction"), ("notes", "Notes")],
-            is_section_sensitive=is_sens(allergies_key),
-            on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, allergies_key, json.dumps(items), "user"),
-            source=_list_meta(allergies_key)[0],
-            updated_at=_list_meta(allergies_key)[1],
-        ),
-        padding=pt_scale(page, 12),
-    )
-    sections += [allergies_panel, ft.Container(height=pt_scale(page, 10))]
-
-    meds_panel = themed_panel(
-        page,
-        ListEditorBody(
-            page,
-            patient_id,
-            "Medications / Supplements", # Updated Title
-            meds_key,
-            _load_json_list((value_map.get(meds_key, {}) or {}).get("value")),
-            [
-                ("is_current", "Current?"),
-                ("name", "Name"),
-                ("dose", "Dose"),
-                ("frequency", "Frequency"),
-                ("notes", "Notes")
-            ],
-            is_section_sensitive=is_sens(meds_key),
-            on_save=lambda items: upsert_patient_field_value(
-                page.db_connection, patient_id, meds_key, json.dumps(items), "user"
+            ListEditorBody(
+                page,
+                patient_id,
+                "Allergies / Intolerances",
+                allergies_key,
+                all_list,
+                [("substance", "Substance"), ("reaction", "Reaction"), ("notes", "Notes")],
+                is_section_sensitive=is_sens(allergies_key),
+                on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, allergies_key, json.dumps(items), "user"),
+                source=_list_meta(allergies_key)[0],
+                updated_at=_list_meta(allergies_key)[1],
             ),
-            source=_list_meta(meds_key)[0],
-            updated_at=_list_meta(meds_key)[1],
-        ),
-        padding=pt_scale(page, 12),
-    )
-    sections += [meds_panel, ft.Container(height=pt_scale(page, 10))]
+            padding=pt_scale(page, 12),
+        )
+        sections += [allergies_panel, ft.Container(height=pt_scale(page, 10))]
 
-    conditions_key = "conditions.list"
-    # Add this to your sections list:
-    conditions_panel = themed_panel(
-        page,
-        ListEditorBody(
+    med_list = _filter_json(_load_json_list((value_map.get(meds_key, {}) or {}).get("value")))
+    if med_list or not st:
+        meds_panel = themed_panel(
             page,
-            patient_id,
-            "Conditions",
-            conditions_key,
-            _load_json_list((value_map.get(conditions_key, {}) or {}).get("value")),
-            [
-                ("name", "Condition"),
-                ("onset_date", "Onset Date"),
-                ("diagnosis_date", "Diagnosis Date"),
-                ("symptoms", "Symptoms"),
-                ("notes", "Notes")
-            ],
-            is_section_sensitive=is_sens("section.other"), # Grouped under "Other" shield
-            on_save=lambda items: upsert_patient_field_value(
-                page.db_connection, patient_id, conditions_key, json.dumps(items), "user"
+            ListEditorBody(
+                page,
+                patient_id,
+                "Medications / Supplements", # Updated Title
+                meds_key,
+                med_list,
+                [
+                    ("is_current", "Current?"),
+                    ("name", "Name"),
+                    ("dose", "Dose"),
+                    ("frequency", "Frequency"),
+                    ("notes", "Notes")
+                ],
+                is_section_sensitive=is_sens(meds_key),
+                on_save=lambda items: upsert_patient_field_value(
+                    page.db_connection, patient_id, meds_key, json.dumps(items), "user"
+                ),
+                source=_list_meta(meds_key)[0],
+                updated_at=_list_meta(meds_key)[1],
             ),
-            source=_list_meta(conditions_key)[0],
-            updated_at=_list_meta(conditions_key)[1],
-        ),
-        padding=pt_scale(page, 12),
-    )
+            padding=pt_scale(page, 12),
+        )
+        sections += [meds_panel, ft.Container(height=pt_scale(page, 10))]
 
-    sections += [conditions_panel, ft.Container(height=pt_scale(page, 10))]
-
-    surgeries_key = "procedures.list"
-    surgeries_panel = themed_panel(
-        page,
-        ListEditorBody(
+    cond_list = _filter_json(_load_json_list((value_map.get(conditions_key, {}) or {}).get("value")))
+    if cond_list or not st:
+        conditions_panel = themed_panel(
             page,
-            patient_id,
-            "Surgeries / Procedures",
-            surgeries_key,
-            _migrate_surgeries(_load_json_list((value_map.get(surgeries_key, {}) or {}).get("value"))),
-            [
-                ("name", "Procedure Name"),
-                ("date", "Date"),
-                ("surgeon", "Surgeon"),
-                ("facility", "Facility"),
-                ("notes", "Notes")
-            ],
-            is_section_sensitive=is_sens("section.other"),
-            on_save=lambda items: upsert_patient_field_value(
-                page.db_connection, patient_id, surgeries_key, json.dumps(items), "user"
+            ListEditorBody(
+                page,
+                patient_id,
+                "Conditions",
+                conditions_key,
+                cond_list,
+                [
+                    ("name", "Condition"),
+                    ("onset_date", "Onset Date"),
+                    ("diagnosis_date", "Diagnosis Date"),
+                    ("symptoms", "Symptoms"),
+                    ("notes", "Notes")
+                ],
+                is_section_sensitive=is_sens("section.other"), # Grouped under "Other" shield
+                on_save=lambda items: upsert_patient_field_value(
+                    page.db_connection, patient_id, conditions_key, json.dumps(items), "user"
+                ),
+                source=_list_meta(conditions_key)[0],
+                updated_at=_list_meta(conditions_key)[1],
             ),
-            source=_list_meta(surgeries_key)[0],
-            updated_at=_list_meta(surgeries_key)[1],
-        ),
-        padding=pt_scale(page, 12),
-    )
+            padding=pt_scale(page, 12),
+        )
 
-    sections += [surgeries_panel, ft.Container(height=pt_scale(page, 10))]
+        sections += [conditions_panel, ft.Container(height=pt_scale(page, 10))]
 
-    insurance_panel = themed_panel(
-        page,
-        ListEditorBody(
+    surg_list = _filter_json(_migrate_surgeries(_load_json_list((value_map.get(surgeries_key, {}) or {}).get("value"))))
+    if surg_list or not st:
+        surgeries_panel = themed_panel(
             page,
-            patient_id,
-            "Insurance",
-            insurance_key,
-            _load_json_list((value_map.get(insurance_key, {}) or {}).get("value")),
-            [
-                ("payer", "Payer / Plan"),
-                ("member_id", "Member ID"),
-                ("group_no", "Group #"),
-                ("bin", "BIN"),
-                ("pcn", "PCN"),
-                ("phone", "Phone"),
-                ("notes", "Notes"),
-            ],
-            is_section_sensitive=is_sens(insurance_key),
-            on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, insurance_key, json.dumps(items), "user"),
-            source=_list_meta(insurance_key)[0],
-            updated_at=_list_meta(insurance_key)[1],
-        ),
-        padding=pt_scale(page, 12),
-    )
-    sections += [insurance_panel, ft.Container(height=pt_scale(page, 10))]
+            ListEditorBody(
+                page,
+                patient_id,
+                "Surgeries / Procedures",
+                surgeries_key,
+                surg_list,
+                [
+                    ("name", "Procedure Name"),
+                    ("date", "Date"),
+                    ("surgeon", "Surgeon"),
+                    ("facility", "Facility"),
+                    ("notes", "Notes")
+                ],
+                is_section_sensitive=is_sens("section.other"),
+                on_save=lambda items: upsert_patient_field_value(
+                    page.db_connection, patient_id, surgeries_key, json.dumps(items), "user"
+                ),
+                source=_list_meta(surgeries_key)[0],
+                updated_at=_list_meta(surgeries_key)[1],
+            ),
+            padding=pt_scale(page, 12),
+        )
+
+        sections += [surgeries_panel, ft.Container(height=pt_scale(page, 10))]
+
+    ins_list = _filter_json(_load_json_list((value_map.get(insurance_key, {}) or {}).get("value")))
+    if ins_list or not st:
+        insurance_panel = themed_panel(
+            page,
+            ListEditorBody(
+                page,
+                patient_id,
+                "Insurance",
+                insurance_key,
+                ins_list,
+                [
+                    ("payer", "Payer / Plan"),
+                    ("member_id", "Member ID"),
+                    ("group_no", "Group #"),
+                    ("bin", "BIN"),
+                    ("pcn", "PCN"),
+                    ("phone", "Phone"),
+                    ("notes", "Notes"),
+                ],
+                is_section_sensitive=is_sens(insurance_key),
+                on_save=lambda items: upsert_patient_field_value(page.db_connection, patient_id, insurance_key, json.dumps(items), "user"),
+                source=_list_meta(insurance_key)[0],
+                updated_at=_list_meta(insurance_key)[1],
+            ),
+            padding=pt_scale(page, 12),
+        )
+        sections += [insurance_panel, ft.Container(height=pt_scale(page, 10))]
 
     # Categories that have their own dedicated sidebar tabs — exclude from Health Record
     _EXCLUDED_CATS = {"demographics", "family history", "immunizations", "vaccines"}
@@ -1102,6 +1167,10 @@ def get_health_record_view(page: ft.Page):
         if cat == "Demographics":
             continue
         if cat.lower() in _EXCLUDED_CATS:
+            continue
+        if not grouped[cat] and st:
+            continue
+        if not grouped[cat] and st:
             continue
         panel = CategoryPanel(
             page,
@@ -1119,6 +1188,9 @@ def get_health_record_view(page: ft.Page):
         "The \"Edit Visibility\" button lets you mark sections as sensitive, adding eye icons that can be used to hide or reveal information.",
     ])
 
+    if not sections and st:
+        sections.append(ft.Container(ft.Text("No matching records found.", color=ft.Colors.GREY, italic=True), padding=20))
+
     return ft.Container(
         padding=pt_scale(page, 20),
         content=ft.ListView(
@@ -1127,6 +1199,7 @@ def get_health_record_view(page: ft.Page):
                     [
                         ft.Text("Health Record", size=pt_scale(page, 22), weight="bold"),
                         ft.Container(expand=True),
+                        search_field,
                         ft.FilledTonalButton(
                             "Edit Visibility",
                             icon=ft.Icons.SHIELD,

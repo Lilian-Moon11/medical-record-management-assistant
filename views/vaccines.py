@@ -20,7 +20,7 @@ import json
 from datetime import datetime
 
 from database import get_patient_field_map, upsert_patient_field_value
-from utils.ui_helpers import pt_scale, show_snack, themed_panel, make_info_button
+from utils.ui_helpers import append_dialog, pt_scale, show_snack, themed_panel, make_info_button
 
 
 _FIELD_KEY = "immunization.list"
@@ -54,13 +54,13 @@ def get_vaccines_view(page: ft.Page):
     vaccines = _load(page, patient_id)
 
     # ---- Sort state persisted on page (survives view rebuilds) ----
-    if not hasattr(page, "_vax_sort_col"):
-        page._vax_sort_col = 1   # default: Date
-    if not hasattr(page, "_vax_sort_asc"):
-        page._vax_sort_asc = False  # newest first
+    if not hasattr(page.mrma, "_vax_sort_col"):
+        page.mrma._vax_sort_col = 1   # default: Date
+    if not hasattr(page.mrma, "_vax_sort_asc"):
+        page.mrma._vax_sort_asc = False  # newest first
 
     def _sort_key(v: dict):
-        col = page._vax_sort_col
+        col = page.mrma._vax_sort_col
         if col == 0:   # Vaccine name
             return str(v.get("vaccine", "") or "").lower()
         elif col == 1: # Date
@@ -69,7 +69,7 @@ def get_vaccines_view(page: ft.Page):
             return str(v.get("administered_by", "") or "").lower()
         return ""
 
-    vaccines.sort(key=_sort_key, reverse=not page._vax_sort_asc)
+    vaccines.sort(key=_sort_key, reverse=not page.mrma._vax_sort_asc)
 
     # ── Shared detail/edit dialog ───────────────────────────────────────────
     _vac_name  = ft.TextField(label="Vaccine Name *", autofocus=True, expand=True)
@@ -100,10 +100,10 @@ def get_vaccines_view(page: ft.Page):
             page.content_area.update()
 
     def _close_dlg(_=None):
-        if hasattr(page, "_vax_dlg"):
-            page._vax_dlg.open = False
+        if hasattr(page.mrma, "_vax_dlg"):
+            page.mrma._vax_dlg.open = False
             try:
-                page._vax_dlg.update()
+                page.mrma._vax_dlg.update()
             except Exception:
                 pass
         page.update()
@@ -130,8 +130,8 @@ def get_vaccines_view(page: ft.Page):
         _close_dlg()
         _refresh_view()
 
-    if not hasattr(page, "_vax_dlg"):
-        page._vax_dlg = ft.AlertDialog(
+    if not hasattr(page.mrma, "_vax_dlg"):
+        page.mrma._vax_dlg = ft.AlertDialog(
             modal=True,
             title=ft.Text("Vaccine Record"),
             content=ft.Container(
@@ -148,26 +148,72 @@ def get_vaccines_view(page: ft.Page):
             ],
             on_dismiss=_close_dlg,
         )
-        page.overlay.append(page._vax_dlg)
+        append_dialog(page, page.mrma._vax_dlg)
 
     def _open_add(_=None):
         _edit_idx["value"] = None
         _clear_fields()
-        page._vax_dlg.title = ft.Text("Add Vaccine")
-        page._vax_dlg.open = True
+        page.mrma._vax_dlg.title = ft.Text("Add Vaccine")
+        page.mrma._vax_dlg.open = True
         page.update()
 
     def _open_edit(idx: int):
         _edit_idx["value"] = idx
         _populate_fields(vaccines[idx])
-        page._vax_dlg.title = ft.Text("Edit Vaccine")
-        page._vax_dlg.open = True
+        page.mrma._vax_dlg.title = ft.Text("Edit Vaccine")
+        page.mrma._vax_dlg.open = True
         page.update()
 
+    # ── Delete confirmation dialog (ensure-once pattern) ──────────────────
+    def _ensure_vax_delete_dialog():
+        if getattr(page.mrma, "_vax_del_dlg", None) is not None:
+            return page.mrma._vax_del_dlg
+
+        page.mrma._vax_del_text = ft.Text("")
+        page.mrma._pending_vax_delete = None
+
+        def _close(_=None):
+            page.mrma._vax_del_dlg.open = False
+            page.mrma._pending_vax_delete = None
+            page.update()
+
+        def _confirm(_=None):
+            pending = page.mrma._pending_vax_delete
+            if pending is None:
+                _close()
+                return
+            try:
+                vaccines.pop(pending)
+                _save(page, patient_id, vaccines)
+            except Exception as ex:
+                show_snack(page, f"Delete failed: {ex}", "red")
+            _close()
+            _refresh_view()
+
+        page.mrma._vax_del_dlg = ft.AlertDialog(
+            modal=False,
+            title=ft.Text("Confirm Delete"),
+            content=page.mrma._vax_del_text,
+            actions=[
+                ft.TextButton("Cancel", on_click=_close),
+                ft.FilledButton("Delete", icon=ft.Icons.DELETE, on_click=_confirm),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=_close,
+        )
+
+        append_dialog(page, page.mrma._vax_del_dlg)
+        page.update()
+        return page.mrma._vax_del_dlg
+
     def _delete(idx: int, _=None):
-        vaccines.pop(idx)
-        _save(page, patient_id, vaccines)
-        _refresh_view()
+        vax = vaccines[idx]
+        name = vax.get("vaccine", "this vaccine record")
+        page.mrma._pending_vax_delete = idx
+        dlg = _ensure_vax_delete_dialog()
+        page.mrma._vax_del_text.value = f'Delete vaccine "{name}"?'
+        dlg.open = True
+        page.update()
 
     # ── Table ───────────────────────────────────────────────────────────────
     rows: list[ft.DataRow] = []
@@ -203,11 +249,11 @@ def get_vaccines_view(page: ft.Page):
         )
 
     def _on_sort(e: ft.DataColumnSortEvent):
-        if page._vax_sort_col == e.column_index:
-            page._vax_sort_asc = not page._vax_sort_asc
+        if page.mrma._vax_sort_col == e.column_index:
+            page.mrma._vax_sort_asc = not page.mrma._vax_sort_asc
         else:
-            page._vax_sort_col = e.column_index
-            page._vax_sort_asc = True
+            page.mrma._vax_sort_col = e.column_index
+            page.mrma._vax_sort_asc = True
         _refresh_view()
 
     table = ft.DataTable(
@@ -220,8 +266,8 @@ def get_vaccines_view(page: ft.Page):
             ft.DataColumn(ft.Text("Actions")),
         ],
         rows=rows,
-        sort_column_index=page._vax_sort_col,
-        sort_ascending=page._vax_sort_asc,
+        sort_column_index=page.mrma._vax_sort_col,
+        sort_ascending=page.mrma._vax_sort_asc,
         border=ft.border.all(1, ft.Colors.GREY_400),
         vertical_lines=ft.border.BorderSide(1, ft.Colors.GREY_100),
     )

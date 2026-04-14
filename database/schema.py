@@ -10,7 +10,6 @@
 # Database schema initialization and default field seeding.
 #
 # Phase 5.0 additions (idempotent):
-# - document_chunks table for AI ingestion pipeline
 # - patient_field_values.source_doc_id / ai_confidence columns for provenance
 # -----------------------------------------------------------------------------
 
@@ -52,21 +51,7 @@ def _ensure_schema(conn):
         )
     """)
 
-    # ── Phase 5.0: AI document chunks ─────────────────────────────────────────
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS document_chunks (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            doc_id           INTEGER NOT NULL,
-            patient_id       INTEGER NOT NULL,
-            page_number      INTEGER,
-            source_file_name TEXT,
-            chunk_text       TEXT NOT NULL,
-            chunk_index      INTEGER NOT NULL,
-            created_at       TEXT,
-            FOREIGN KEY(doc_id)     REFERENCES documents(id),
-            FOREIGN KEY(patient_id) REFERENCES patients(id)
-        )
-    """)
+
 
     # ── Phase 5.1: AI suggestion review inbox ─────────────────────────────────
     cur.execute("""
@@ -97,6 +82,8 @@ def _ensure_schema(conn):
         "ALTER TABLE documents ADD COLUMN specialty TEXT",
         "ALTER TABLE lab_results ADD COLUMN category TEXT DEFAULT 'Lab'",
         "ALTER TABLE records_requests ADD COLUMN source_doc_id INTEGER",
+        "ALTER TABLE providers ADD COLUMN source TEXT NOT NULL DEFAULT 'User'",
+        "ALTER TABLE providers ADD COLUMN source_file_name TEXT",
     ):
         try:
             cur.execute(col_sql)
@@ -116,5 +103,46 @@ def _ensure_schema(conn):
     ]
     for k, label, dt, cat, sens in defaults:
         ensure_field_definition(conn, k, label, dt, cat, sens, commit=False)
+
+    # ── Migration: convert absolute doc paths to relative ─────────────────────
+    # Idempotent: converts legacy absolute paths to relative.
+    # Handles two cases:
+    #   1. Path is under current app_dir → simple relative_to()
+    #   2. Path is under a *different* old directory (e.g. LPA→MRMA rename)
+    #      → search for the .enc file by name in current data_dir
+    try:
+        from core.paths import app_dir, data_dir, to_relative_doc_path
+        from pathlib import Path
+        import glob
+
+        cur.execute("SELECT id, file_path, patient_id FROM documents WHERE file_path IS NOT NULL")
+        for row in cur.fetchall():
+            doc_id, stored, patient_id = row
+            if not stored:
+                continue
+            p = Path(stored)
+            if not p.is_absolute():
+                continue  # already relative — skip
+
+            # Case 1: path is under current app_dir
+            rel = to_relative_doc_path(stored)
+            if rel != stored:
+                cur.execute(
+                    "UPDATE documents SET file_path = ? WHERE id = ?",
+                    (rel, doc_id),
+                )
+                continue
+
+            # Case 2: path points to old directory — try to find file by name
+            fname = p.name
+            candidate = data_dir / str(patient_id) / fname
+            if candidate.exists():
+                rel = to_relative_doc_path(str(candidate))
+                cur.execute(
+                    "UPDATE documents SET file_path = ? WHERE id = ?",
+                    (rel, doc_id),
+                )
+    except Exception:
+        pass  # non-critical; absolute paths still work via resolve_doc_path
 
     conn.commit()

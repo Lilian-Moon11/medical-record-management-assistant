@@ -1,3 +1,4 @@
+from utils.ui_helpers import append_dialog
 # Copyright (C) 2026 Lilian-Moon11
 # Placement Review — interactive drag-to-correct dialog for static PDF overlays.
 #
@@ -189,7 +190,7 @@ def open_placement_review(
     )
 
     if dlg not in page.overlay:
-        page.overlay.append(dlg)
+        append_dialog(page, dlg)
     dlg.open = True
     page.update()
 

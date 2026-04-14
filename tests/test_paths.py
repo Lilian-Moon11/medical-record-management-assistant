@@ -22,7 +22,7 @@ class TestPaths(unittest.TestCase):
 
     def test_all_paths_are_absolute(self):
         for attr in ("app_dir", "db_path", "keybag_path", "ai_dir", "model_dir",
-                     "chroma_dir", "export_dir", "data_dir"):
+                     "export_dir", "data_dir"):
             p = getattr(paths, attr)
             self.assertTrue(p.is_absolute(), f"{attr} is not absolute: {p}")
 
@@ -40,7 +40,7 @@ class TestPaths(unittest.TestCase):
 
     def test_directories_created(self):
         """Importing paths should have created all required directories."""
-        for attr in ("app_dir", "model_dir", "chroma_dir", "export_dir", "data_dir"):
+        for attr in ("app_dir", "model_dir", "export_dir", "data_dir"):
             p = getattr(paths, attr)
             self.assertTrue(p.exists(), f"{attr} directory was not created: {p}")
             self.assertTrue(p.is_dir(), f"{attr} is not a directory: {p}")

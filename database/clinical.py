@@ -41,7 +41,7 @@ def _like(s: str):
 def list_providers(conn, patient_id, search=None, limit=200):
     cur = conn.cursor()
     params = [patient_id]
-    sql = "SELECT id, name, specialty, clinic, phone, fax, email, address, notes, created_at, updated_at FROM providers WHERE patient_id = ?"
+    sql = "SELECT id, name, specialty, clinic, phone, fax, email, address, notes, source, source_file_name, created_at, updated_at FROM providers WHERE patient_id = ?"
     if search:
         q = _like(search)
         sql += " AND (name LIKE ? OR clinic LIKE ? OR specialty LIKE ? OR phone LIKE ?)"
@@ -216,8 +216,10 @@ def get_patient_documents(conn, patient_id):
     return cur.fetchall()
 
 def add_document(conn, patient_id, file_name, file_path, upload_date):
+    from core.paths import to_relative_doc_path
+    rel_path = to_relative_doc_path(file_path)
     cur = conn.cursor()
-    cur.execute("INSERT INTO documents (patient_id, file_name, file_path, upload_date) VALUES (?, ?, ?, ?)", (patient_id, file_name, file_path, upload_date))
+    cur.execute("INSERT INTO documents (patient_id, file_name, file_path, upload_date) VALUES (?, ?, ?, ?)", (patient_id, file_name, rel_path, upload_date))
     conn.commit()
     return cur.lastrowid
 
@@ -228,20 +230,28 @@ def delete_document(conn, document_id):
     row = cur.fetchone()
     enc_path = row[0] if row else None
     # Cascade delete AI data so deleted files don't haunt the Chat Assistant
-    cur.execute("DELETE FROM document_chunks WHERE doc_id = ?", (document_id,))
     cur.execute("DELETE FROM ai_extraction_inbox WHERE doc_id = ?", (document_id,))
     cur.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
     # Remove encrypted file from disk
     if enc_path:
+        from core.paths import resolve_doc_path
+        resolved = str(resolve_doc_path(enc_path))
         try:
-            if os.path.exists(enc_path):
-                os.remove(enc_path)
+            if os.path.exists(resolved):
+                os.remove(resolved)
         except OSError as ex:
-            print(f"[delete_document] Could not remove {enc_path}: {ex}")
+            print(f"[delete_document] Could not remove {resolved}: {ex}")
 
 
 def get_document_metadata(conn, document_id):
     cur = conn.cursor()
     cur.execute("SELECT file_name, file_path, upload_date FROM documents WHERE id = ?", (document_id,))
     return cur.fetchone()
+
+# AI Extraction inbox helper
+def get_pending_suggestion_count(conn, patient_id: int) -> int:
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM ai_extraction_inbox WHERE patient_id=? AND status='pending'", (patient_id,))
+    row = cur.fetchone()
+    return row[0] if row else 0

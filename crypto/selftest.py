@@ -123,10 +123,13 @@ def run_crypto_self_test(
             docs = get_patient_documents(conn, patient_id)
             if docs:
                 enc_path = docs[0][3]
-                if enc_path and os.path.exists(enc_path):
-                    with open(enc_path, "rb") as f:
-                        blob = f.read()
-                    _ = decrypt_bytes(fmk, blob)  # raises if wrong key or corrupted
+                if enc_path:
+                    from core.paths import resolve_doc_path
+                    resolved = str(resolve_doc_path(enc_path))
+                    if os.path.exists(resolved):
+                        with open(resolved, "rb") as f:
+                            blob = f.read()
+                        _ = decrypt_bytes(fmk, blob)  # raises if wrong key or corrupted
 
         return SelfTestResult(True, "Vault safety check passed.", "")
 

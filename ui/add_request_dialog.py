@@ -17,7 +17,7 @@
 import flet as ft
 from datetime import datetime, timedelta
 from database.records_requests import create_request
-from utils.ui_helpers import pt_scale, show_snack
+from utils.ui_helpers import append_dialog, pt_scale, show_snack
 
 
 def open_add_request_dialog(
@@ -136,7 +136,7 @@ def open_add_request_dialog(
             on_dismiss=_close,
         )
         setattr(page, _dlg_key, dlg)
-        page.overlay.append(dlg)
+        append_dialog(page, dlg)
     else:
         # Reset fields for reuse
         dlg = getattr(page, _dlg_key)

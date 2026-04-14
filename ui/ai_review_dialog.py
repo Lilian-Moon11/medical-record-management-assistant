@@ -11,7 +11,7 @@ UI issues by enforcing specific text colors.
 """
 
 import flet as ft
-from utils.ui_helpers import pt_scale, show_snack
+from utils.ui_helpers import append_dialog, pt_scale, show_snack
 import json
 def fetch_pending_suggestions(conn, patient_id: int) -> list[dict]:
     cur = conn.cursor()
@@ -51,7 +51,9 @@ def apply_suggestion(conn, patient_id: int, s: dict):
             clinic=val_obj.get("clinic"),
             phone=val_obj.get("phone"),
             fax=val_obj.get("fax"),
-            address=val_obj.get("address")
+            address=val_obj.get("address"),
+            source="ai",
+            source_file_name=s.get("source_file_name", "AI Extracted")
         )
         return
 
@@ -84,7 +86,7 @@ def apply_suggestion(conn, patient_id: int, s: dict):
             m = re.search(r"[-+]?\d[\d,]*\.?\d*", t)
             if not m: return None
             try: return float(m.group(0).replace(",", ""))
-            except: return None
+            except Exception as ex: return None
             
         value_text = str(val_obj.get("value") or val_obj.get("value_text", "")).strip()
         category = "Vitals" if s["field_key"] == "vitals.list" else "Lab"
@@ -133,14 +135,14 @@ def apply_suggestion(conn, patient_id: int, s: dict):
         if ex_row and ex_row[0]:
             try:
                 current_list = json.loads(ex_row[0])
-            except:
+            except Exception as ex:
                 pass
         if not isinstance(current_list, list):
             current_list = []
         
         try:
             new_val_obj = json.loads(s["suggested_value"])
-        except:
+        except Exception as ex:
             new_val_obj = {"value": s["suggested_value"], "_ai_source": s["source_file_name"]}
             
         # Merge/Update logic for lists: avoid duplicates if names match
@@ -215,25 +217,36 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
         if on_close: on_close()
         return
 
-    list_view = ft.ListView(spacing=15, padding=10, expand=True, auto_scroll=False)
+    if not hasattr(page.mrma, "_ai_review_list_view"):
+        page.mrma._ai_review_list_view = ft.ListView(spacing=15, padding=10, expand=True, auto_scroll=False)
+    list_view = page.mrma._ai_review_list_view
     
-    dlg = ft.AlertDialog(
-        modal=True,
-        title=ft.Text("Review Extraction Suggestions", weight="bold"),
-        content=ft.Container(
-            width=600,
-            height=400,
-            content=list_view
-        ),
-        actions=[],
-    )
-    
-    def _close(_e):
+    if not hasattr(page.mrma, "_ai_review_dlg"):
+        page.mrma._ai_review_dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Review Extraction Suggestions", weight="bold"),
+            content=ft.Container(
+                width=600,
+                height=400,
+                content=list_view
+            ),
+            actions=[],
+        )
+        append_dialog(page, page.mrma._ai_review_dlg)
+
+    dlg = page.mrma._ai_review_dlg
+
+    def _close(_e=None):
         dlg.open = False
+        try:
+            dlg.update()
+        except Exception:
+            pass
         page.update()
         if on_close: on_close()
         
-    dlg.actions.append(ft.TextButton("Close", on_click=_close))
+    dlg.actions = [ft.TextButton("Close", on_click=_close)]
+    dlg.on_dismiss = _close
     
     def refresh_list():
         list_view.controls.clear()
@@ -329,7 +342,7 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
                     display_text = _d2s(parsed_val)
                 else:
                     display_text = str(parsed_val)
-            except:
+            except Exception as ex:
                 display_text = s["suggested_value"]
 
             # 2. Refined conflict logic for empty states
@@ -452,7 +465,6 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
             
         page.update()
 
-    page.overlay.append(dlg)
     refresh_list()
     dlg.open = True
     page.update()

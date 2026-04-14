@@ -122,8 +122,8 @@ def export_profile(conn, dmk_raw: bytes, data_dir: str,
         enc_path = doc.get("file_path", "")
         if not enc_path:
             continue
-        full_enc = os.path.join(os.path.dirname(data_dir), enc_path) \
-            if not os.path.isabs(enc_path) else enc_path
+        from core.paths import resolve_doc_path
+        full_enc = str(resolve_doc_path(enc_path))
         if not os.path.isfile(full_enc):
             # best-effort: skip missing files
             continue
@@ -174,10 +174,39 @@ def peek_manifest(zip_path: str, zip_password: str) -> dict:
     return json.loads(raw)
 
 
+def find_merge_candidates(conn, manifest: dict) -> dict[int, int]:
+    """Check if any patients in the manifest match existing patients by name+DOB.
+
+    Returns a dict of {old_id_in_zip: existing_db_id} for each match.
+    """
+    cur = conn.cursor()
+    candidates = {}
+    for p in manifest.get("patients", []):
+        name = (p.get("name") or "").strip()
+        dob = (p.get("dob") or "").strip()
+        if not name:
+            continue
+        cur.execute(
+            "SELECT id FROM patients WHERE name = ? AND dob = ? LIMIT 1",
+            (name, dob),
+        )
+        row = cur.fetchone()
+        if row:
+            candidates[p["id"]] = row[0]
+    return candidates
+
+
 def import_profile(conn, dmk_raw: bytes, data_dir: str,
-                   zip_path: str, zip_password: str) -> dict:
+                   zip_path: str, zip_password: str,
+                   merge_map: dict | None = None) -> dict:
     """
     Import an airlock ZIP into the current vault.
+
+    Parameters
+    ----------
+    merge_map : dict | None
+        Optional mapping of {old_patient_id: existing_patient_id}.
+        When provided, matched patients are reused instead of created.
 
     Returns a summary dict with counts of imported items.
     """
@@ -219,12 +248,17 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
         # ── patients ──
         for p in manifest.get("patients", []):
             old_id = p["id"]
-            cur.execute(
-                "INSERT INTO patients (name, dob, notes) VALUES (?, ?, ?)",
-                (p.get("name"), p.get("dob"), p.get("notes")),
-            )
-            patient_id_map[old_id] = cur.lastrowid
-            counts["patients"] += 1
+            # Check if this patient should be merged with an existing one
+            if merge_map and old_id in merge_map:
+                patient_id_map[old_id] = merge_map[old_id]
+                # Don't increment counts — we didn't create a new patient
+            else:
+                cur.execute(
+                    "INSERT INTO patients (name, dob, notes) VALUES (?, ?, ?)",
+                    (p.get("name"), p.get("dob"), p.get("notes")),
+                )
+                patient_id_map[old_id] = cur.lastrowid
+                counts["patients"] += 1
 
         # ── field_definitions (idempotent) ──
         for fd in manifest.get("field_definitions", []):
@@ -260,6 +294,11 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
             new_pid = patient_id_map.get(prov["patient_id"])
             if new_pid is None:
                 continue
+            
+            cur.execute("SELECT id FROM providers WHERE patient_id = ? AND name = ?", (new_pid, prov.get("name")))
+            if cur.fetchone():
+                continue
+                
             cur.execute(
                 "INSERT INTO providers "
                 "(patient_id, name, specialty, clinic, phone, fax, email, "
@@ -278,6 +317,16 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
             new_pid = patient_id_map.get(lr["patient_id"])
             if new_pid is None:
                 continue
+                
+            cur.execute(
+                "SELECT id FROM lab_reports WHERE patient_id = ? AND collected_date = ? AND facility = ?",
+                (new_pid, lr.get("collected_date"), lr.get("facility"))
+            )
+            row = cur.fetchone()
+            if row:
+                report_id_map[old_id] = row[0]
+                continue
+                
             # source_document_id will be remapped after documents are inserted
             cur.execute(
                 "INSERT INTO lab_reports "
@@ -298,6 +347,14 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
             new_rid = report_id_map.get(res["report_id"])
             if new_pid is None or new_rid is None:
                 continue
+                
+            cur.execute(
+                "SELECT id FROM lab_results WHERE patient_id = ? AND report_id = ? AND test_name = ?",
+                (new_pid, new_rid, res.get("test_name"))
+            )
+            if cur.fetchone():
+                continue
+                
             cur.execute(
                 "INSERT INTO lab_results "
                 "(patient_id, report_id, test_name, value_text, value_num, "
@@ -326,12 +383,22 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
             new_pid = patient_id_map.get(doc["patient_id"])
             if new_pid is None:
                 continue
+            
+            file_name = doc.get("file_name", f"doc_{old_id}")
+                
+            cur.execute(
+                "SELECT id FROM documents WHERE patient_id = ? AND file_name = ?",
+                (new_pid, file_name)
+            )
+            row = cur.fetchone()
+            if row:
+                doc_id_map[old_id] = row[0]
+                continue
 
             # prepare filesystem destination
             patient_dir = os.path.join(data_dir, str(new_pid))
             os.makedirs(patient_dir, exist_ok=True)
 
-            file_name = doc.get("file_name", f"doc_{old_id}")
             enc_name = file_name + ".enc" if not file_name.endswith(".enc") else file_name
             dest_enc = os.path.join(patient_dir, enc_name)
             rel_path = os.path.join("data", str(new_pid), enc_name)
@@ -349,7 +416,7 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
                 "INSERT INTO documents "
                 "(patient_id, file_name, file_path, upload_date) "
                 "VALUES (?, ?, ?, ?)",
-                (new_pid, doc.get("file_name"), rel_path,
+                (new_pid, file_name, rel_path,
                  doc.get("upload_date", now)),
             )
             doc_id_map[old_id] = cur.lastrowid
@@ -359,6 +426,13 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
         for rr in manifest.get("records_requests", []):
             new_pid = patient_id_map.get(rr["patient_id"])
             if new_pid is None:
+                continue
+                
+            cur.execute(
+                "SELECT id FROM records_requests WHERE patient_id = ? AND provider_name = ? AND date_requested = ?",
+                (new_pid, rr.get("provider_name"), rr.get("date_requested"))
+            )
+            if cur.fetchone():
                 continue
             
             # Map doc IDs if present
@@ -385,7 +459,7 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
             new_doc_id = doc_id_map.get(ai.get("doc_id")) if ai.get("doc_id") else None
 
             cur.execute(
-                "INSERT INTO ai_extraction_inbox "
+                "INSERT OR IGNORE INTO ai_extraction_inbox "
                 "(patient_id, doc_id, field_key, suggested_value, confidence, "
                 "source_file_name, conflict, existing_value, status) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

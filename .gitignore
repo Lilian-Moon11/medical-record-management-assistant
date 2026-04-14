@@ -6,6 +6,8 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .vs/
+.gemini_scratch/
+test_pack/
 
 # --- Environment Variables ---
 .env

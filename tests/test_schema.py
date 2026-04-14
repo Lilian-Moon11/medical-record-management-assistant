@@ -53,17 +53,6 @@ class TestSchema(unittest.TestCase):
 
     # ── Phase 5.0 additions ──────────────────────────────────────────────────
 
-    def test_document_chunks_table_exists(self):
-        self.assertTrue(self._table_exists("document_chunks"),
-                        "document_chunks table is missing")
-
-    def test_document_chunks_columns(self):
-        for col in ("id", "doc_id", "patient_id", "page_number",
-                    "source_file_name", "chunk_text", "chunk_index", "created_at"):
-            self.assertTrue(
-                self._column_exists("document_chunks", col),
-                f"document_chunks is missing column: {col}"
-            )
 
     def test_patient_field_values_source_doc_id(self):
         self.assertTrue(

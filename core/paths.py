@@ -38,7 +38,6 @@ keybag_path: Path = app_dir / "medical_records_v1.db.keybag"
 
 ai_dir: Path     = app_dir / "ai"
 model_dir: Path  = ai_dir  / "models"
-chroma_dir: Path = ai_dir  / "embeddings"
 
 # ── Exports ───────────────────────────────────────────────────────────────────
 
@@ -52,9 +51,39 @@ data_dir: Path = app_dir / "data"
 
 def _ensure_dirs() -> None:
     """Create all required directories on first run (idempotent)."""
-    for _d in (app_dir, model_dir, chroma_dir, export_dir, data_dir):
+    for _d in (app_dir, model_dir, export_dir, data_dir):
         _d.mkdir(parents=True, exist_ok=True)
 
 
 _ensure_dirs()
 
+
+# ── Document path helpers ────────────────────────────────────────────────────
+# The database stores file_path as a path relative to app_dir
+# (e.g. "data/1/file.pdf.enc").  These helpers convert between
+# the stored relative path and a usable absolute path.
+
+def resolve_doc_path(stored_path: str) -> Path:
+    """Convert a stored file_path (relative or legacy absolute) to an absolute path.
+
+    Handles:
+      - Relative paths (preferred):  "data/1/file.enc" -> app_dir / "data/1/file.enc"
+      - Legacy absolute paths:       "C:\\old\\data\\1\\file.enc" -> returned as-is
+    """
+    p = Path(stored_path)
+    if p.is_absolute():
+        return p  # legacy absolute path — returned unchanged
+    return app_dir / p
+
+
+def to_relative_doc_path(abs_path: str) -> str:
+    """Convert an absolute path to a relative path for DB storage.
+
+    If the path is under app_dir, returns the relative portion.
+    Otherwise returns the path unchanged (safety fallback).
+    """
+    try:
+        return str(Path(abs_path).relative_to(app_dir))
+    except ValueError:
+        # Not under app_dir — return as-is (shouldn't happen in normal use)
+        return abs_path

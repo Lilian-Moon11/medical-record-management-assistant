@@ -44,7 +44,7 @@ import json
 from collections import defaultdict
 
 from database import get_patient_field_map, upsert_patient_field_value
-from utils.ui_helpers import pt_scale, show_snack, themed_panel, make_info_button
+from utils.ui_helpers import append_dialog, pt_scale, show_snack, themed_panel, make_info_button
 
 
 # ---------------------------------------------------------------------------
@@ -338,33 +338,33 @@ def _build_legend(page: ft.Page) -> ft.Control:
 # Detail dialog (tap a node — edit conditions, bio sex, save all at once)
 # ---------------------------------------------------------------------------
 def _ensure_detail_dialog(page: ft.Page):
-    if hasattr(page, "_fh_detail_dlg"):
+    if hasattr(page.mrma, "_fh_detail_dlg"):
         return
 
-    page._fh_detail_relation = ft.Text("", size=18, weight="bold")
-    page._fh_detail_conds_col = ft.Column(tight=True, spacing=4, scroll=ft.ScrollMode.AUTO,
+    page.mrma._fh_detail_relation = ft.Text("", size=18, weight="bold")
+    page.mrma._fh_detail_conds_col = ft.Column(tight=True, spacing=4, scroll=ft.ScrollMode.AUTO,
                                            height=160)
-    page._fh_detail_new_cond = ft.TextField(
+    page.mrma._fh_detail_new_cond = ft.TextField(
         label="Add condition (press Enter to add)",
         expand=True,
     )
-    page._fh_detail_bio_sex = ft.Dropdown(
+    page.mrma._fh_detail_bio_sex = ft.Dropdown(
         label="Biological Sex (optional)",
         options=[ft.dropdown.Option(o) for o in BIOLOGICAL_SEX_OPTIONS],
         width=260,
     )
-    page._fh_detail_shared_dd = ft.Dropdown(
+    page.mrma._fh_detail_shared_dd = ft.Dropdown(
         label="Shared Parent Side",
         options=[ft.dropdown.Option(o) for o in SHARED_PARENT_OPTIONS],
         visible=False, width=220,
     )
-    page._fh_detail_notes_tf = ft.TextField(label="Notes (optional)", expand=True)
+    page.mrma._fh_detail_notes_tf = ft.TextField(label="Notes (optional)", expand=True)
 
     # Internal mutable state for this session
     _cond_list: list[str] = []   # conditions being edited
 
     def _rebuild_list():
-        col = page._fh_detail_conds_col
+        col = page.mrma._fh_detail_conds_col
         col.controls.clear()
         if not _cond_list:
             col.controls.append(
@@ -389,26 +389,26 @@ def _ensure_detail_dialog(page: ft.Page):
             _cond_list.pop(idx)
             _rebuild_list()
             try:
-                page._fh_detail_conds_col.update()
+                page.mrma._fh_detail_conds_col.update()
             except Exception:
                 pass
             page.update()
 
     def _add_cond_inline(_=None):
-        cond = (page._fh_detail_new_cond.value or "").strip()
+        cond = (page.mrma._fh_detail_new_cond.value or "").strip()
         if not cond:
             return
         _cond_list.append(cond)
-        page._fh_detail_new_cond.value = ""
+        page.mrma._fh_detail_new_cond.value = ""
         _rebuild_list()
         try:
-            page._fh_detail_conds_col.update()
-            page._fh_detail_new_cond.update()
+            page.mrma._fh_detail_conds_col.update()
+            page.mrma._fh_detail_new_cond.update()
         except Exception:
             pass
         page.update()
 
-    page._fh_detail_new_cond.on_submit = _add_cond_inline
+    page.mrma._fh_detail_new_cond.on_submit = _add_cond_inline
 
     _det_closing = [False]
 
@@ -416,16 +416,16 @@ def _ensure_detail_dialog(page: ft.Page):
         if _det_closing[0]:
             return
         _det_closing[0] = True
-        page._fh_detail_dlg.open = False
+        page.mrma._fh_detail_dlg.open = False
         page.update()
         _det_closing[0] = False
 
     def _save(_=None):
         try:
-            rel      = page._fh_detail_dlg._relation
-            name     = page._fh_detail_dlg._name
-            rt_type  = page._fh_detail_dlg._rt_type
-            rt_name  = page._fh_detail_dlg._rt_name
+            rel      = page.mrma._fh_detail_dlg._relation
+            name     = page.mrma._fh_detail_dlg._name
+            rt_type  = page.mrma._fh_detail_dlg._rt_type
+            rt_name  = page.mrma._fh_detail_dlg._rt_name
             pat = page.current_profile
             if not pat:
                 show_snack(page, "No patient profile.", "red")
@@ -437,9 +437,9 @@ def _ensure_detail_dialog(page: ft.Page):
                      if not ((it.get("relation") or "") == rel
                              and (it.get("name") or "").strip() == name)]
             # Write back one entry per condition with shared person-level fields
-            bio_sex = page._fh_detail_bio_sex.value or "Unknown"
-            notes   = (page._fh_detail_notes_tf.value or "").strip()
-            shared  = page._fh_detail_shared_dd.value or ""
+            bio_sex = page.mrma._fh_detail_bio_sex.value or "Unknown"
+            notes   = (page.mrma._fh_detail_notes_tf.value or "").strip()
+            shared  = page.mrma._fh_detail_shared_dd.value or ""
             for cond in _cond_list:
                 entry: dict = {
                     "relation":       rel,
@@ -463,30 +463,30 @@ def _ensure_detail_dialog(page: ft.Page):
             show_snack(page, f"Save error: {ex}", "red")
 
     # Store rebuild fn so _open_detail_for can call it
-    page._fh_detail_rebuild = _rebuild_list
-    page._fh_detail_cond_list = _cond_list
+    page.mrma._fh_detail_rebuild = _rebuild_list
+    page.mrma._fh_detail_cond_list = _cond_list
 
-    page._fh_detail_dlg = ft.AlertDialog(
+    page.mrma._fh_detail_dlg = ft.AlertDialog(
         modal=False,
         title=ft.Row([ft.Icon(ft.Icons.PERSON, color=ft.Colors.TEAL_400),
-                      page._fh_detail_relation], spacing=8),
+                      page.mrma._fh_detail_relation], spacing=8),
         content=ft.Container(
             width=500,
             content=ft.Column(
                 [
                     ft.Text("Conditions:", size=12, italic=True,
                             color=ft.Colors.GREY_500),
-                    page._fh_detail_conds_col,
-                    page._fh_detail_new_cond,
+                    page.mrma._fh_detail_conds_col,
+                    page.mrma._fh_detail_new_cond,
                     ft.Divider(),
-                    page._fh_detail_bio_sex,
+                    page.mrma._fh_detail_bio_sex,
                     ft.Text(
                         "Biological sex is per person, not per condition."
                         " Used only to flag sex-linked conditions (e.g. BRCA, hemophilia).",
                         size=11, italic=True, color=ft.Colors.GREY_500,
                     ),
-                    page._fh_detail_shared_dd,
-                    page._fh_detail_notes_tf,
+                    page.mrma._fh_detail_shared_dd,
+                    page.mrma._fh_detail_notes_tf,
                 ],
                 spacing=8, tight=True, scroll=ft.ScrollMode.AUTO,
             ),
@@ -497,23 +497,23 @@ def _ensure_detail_dialog(page: ft.Page):
         ],
         on_dismiss=_close,
     )
-    page._fh_detail_dlg._relation = ""
-    page._fh_detail_dlg._name     = ""
-    page._fh_detail_dlg._rt_type  = ""
-    page._fh_detail_dlg._rt_name  = ""
-    page.overlay.append(page._fh_detail_dlg)
+    page.mrma._fh_detail_dlg._relation = ""
+    page.mrma._fh_detail_dlg._name     = ""
+    page.mrma._fh_detail_dlg._rt_type  = ""
+    page.mrma._fh_detail_dlg._rt_name  = ""
+    append_dialog(page, page.mrma._fh_detail_dlg)
 
 
 def _open_detail_for(page: ft.Page, relation: str, display_name: str, entries: list[dict]):
     _ensure_detail_dialog(page)
-    dlg = page._fh_detail_dlg
+    dlg = page.mrma._fh_detail_dlg
     dlg._relation = relation
     dlg._name     = display_name
     dlg._rt_type  = entries[0].get("related_to_type", "") if entries else ""
     dlg._rt_name  = entries[0].get("related_to_name", "") if entries else ""
 
     title_text = display_name if display_name else relation
-    page._fh_detail_relation.value = f"{title_text} ({relation})" if display_name else relation
+    page.mrma._fh_detail_relation.value = f"{title_text} ({relation})" if display_name else relation
 
     # Load per-person bio sex from first entry that has a value
     bio_sex_val = None
@@ -522,22 +522,22 @@ def _open_detail_for(page: ft.Page, relation: str, display_name: str, entries: l
         if bs and bs != "Unknown":
             bio_sex_val = bs
             break
-    page._fh_detail_bio_sex.value = bio_sex_val
+    page.mrma._fh_detail_bio_sex.value = bio_sex_val
 
     # Load per-person notes from first entry
-    page._fh_detail_notes_tf.value = entries[0].get("notes", "") if entries else ""
+    page.mrma._fh_detail_notes_tf.value = entries[0].get("notes", "") if entries else ""
 
     # Half-sibling shared parent
-    page._fh_detail_shared_dd.visible = (relation == "Half-Sibling")
-    page._fh_detail_shared_dd.value   = (
+    page.mrma._fh_detail_shared_dd.visible = (relation == "Half-Sibling")
+    page.mrma._fh_detail_shared_dd.value   = (
         entries[0].get("shared_parent", "") if entries else ""
     )
 
     # Reset new condition field
-    page._fh_detail_new_cond.value = ""
+    page.mrma._fh_detail_new_cond.value = ""
 
     # Populate editable condition list
-    cond_list = page._fh_detail_cond_list
+    cond_list = page.mrma._fh_detail_cond_list
     cond_list.clear()
     for e in entries:
         cond = (e.get("condition") or "").strip()
@@ -548,7 +548,7 @@ def _open_detail_for(page: ft.Page, relation: str, display_name: str, entries: l
     rt_type = dlg._rt_type
     rt_name = dlg._rt_name
 
-    page._fh_detail_rebuild()
+    page.mrma._fh_detail_rebuild()
 
     dlg.open = True
     page.update()
@@ -558,7 +558,7 @@ def _open_detail_for(page: ft.Page, relation: str, display_name: str, entries: l
 # Add-family-member dialog
 # ---------------------------------------------------------------------------
 def _ensure_add_dialog(page: ft.Page):
-    if hasattr(page, "_fh_add_dlg"):
+    if hasattr(page.mrma, "_fh_add_dlg"):
         return
 
     _name_tf = ft.TextField(label="Name / Nickname (optional)", expand=True,
@@ -628,7 +628,7 @@ def _ensure_add_dialog(page: ft.Page):
         if _closing[0]:
             return
         _closing[0] = True
-        page._fh_add_dlg.open = False
+        page.mrma._fh_add_dlg.open = False
         page.update()
         _closing[0] = False
 
@@ -669,7 +669,7 @@ def _ensure_add_dialog(page: ft.Page):
             import traceback; traceback.print_exc()
             show_snack(page, f"Save error: {ex}", "red")
 
-    page._fh_add_dlg = ft.AlertDialog(
+    page.mrma._fh_add_dlg = ft.AlertDialog(
         modal=False,
         title=ft.Text("Add Family Member"),
         content=ft.Container(
@@ -695,8 +695,8 @@ def _ensure_add_dialog(page: ft.Page):
         ],
         on_dismiss=_close,
     )
-    page.overlay.append(page._fh_add_dlg)
-    page._fh_add_dlg._widgets = (
+    append_dialog(page, page.mrma._fh_add_dlg)
+    page.mrma._fh_add_dlg._widgets = (
         _name_tf, _rel_dd, _shared_dd, _cond_tf,
         _bio_sex_dd, _rt_type_dd, _rt_name_dd, _rt_section, _rt_row, _rt_no_members, _notes_tf,
     )
@@ -706,7 +706,7 @@ def _open_add_dialog(page: ft.Page):
     _ensure_add_dialog(page)
     (name_tf, rel_dd, shared_dd, cond_tf,
      bio_sex_dd, rt_type_dd, rt_name_dd, rt_section,
-     rt_row, rt_no_members, notes_tf) = page._fh_add_dlg._widgets
+     rt_row, rt_no_members, notes_tf) = page.mrma._fh_add_dlg._widgets
 
     # Reset fields
     name_tf.value     = ""
@@ -742,7 +742,7 @@ def _open_add_dialog(page: ft.Page):
     rt_row.visible        = has_options
     rt_no_members.visible = not has_options
 
-    page._fh_add_dlg.open = True
+    page.mrma._fh_add_dlg.open = True
     page.update()
 
 

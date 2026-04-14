@@ -34,7 +34,7 @@ import json
 from datetime import datetime
 from fpdf import FPDF
 from database.patient import get_patient_field_map, get_profile
-from database.clinical import list_lab_reports, list_lab_results_for_report
+from database.clinical import list_lab_reports, list_lab_results_for_report, list_providers
 
 class MedicalSummaryPDF(FPDF):
     def header(self):
@@ -155,6 +155,39 @@ def generate_summary_pdf(db_conn, patient_id, options=None):
     if options.get('conditions', True):
         draw_section_table("Active Conditions", "conditions.list", 
                        [("name", "Condition"), ("onset_date", "Onset Date"), ("symptoms", "Symptoms")])
+
+    # Providers
+    if options.get('providers', True):
+        try:
+            providers = list_providers(db_conn, patient_id, limit=200)
+        except Exception:
+            providers = []
+        if providers:
+            pdf.set_font("helvetica", "B", 12)
+            pdf.cell(0, 8, " Provider Directory", ln=True, border="B")
+            col_w = 190 / 4
+            pdf.set_font("helvetica", "B", 10)
+            for h in ["Name", "Specialty", "Clinic", "Phone"]:
+                pdf.cell(col_w, 8, h, border=1, align="C")
+            pdf.ln()
+            pdf.set_font("helvetica", "", 9)
+            for p in providers:
+                # p: (id, name, specialty, clinic, phone, ...)
+                pdf.cell(col_w, 7, str(p[1] or ""), border=1)
+                pdf.cell(col_w, 7, str(p[2] or ""), border=1)
+                pdf.cell(col_w, 7, str(p[3] or ""), border=1)
+                pdf.cell(col_w, 7, str(p[4] or ""), border=1)
+                pdf.ln()
+            pdf.ln(5)
+
+    if options.get('vaccines', True):
+        draw_section_table("Vaccines / Immunizations", "immunization.list",
+                       [("vaccine", "Vaccine"), ("date", "Date"), ("notes", "Notes")])
+
+    if options.get('family_history', True):
+        # The schema uses name, relation, condition
+        draw_section_table("Family History", "family_history.list",
+                       [("name", "Relative Name"), ("relation", "Relationship"), ("condition", "Condition(s)")])
 
     # 7. Final Output
     pdf.set_font("helvetica", "I", 10)

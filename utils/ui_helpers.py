@@ -96,7 +96,7 @@ def show_snack(page: ft.Page, message: str, color=ft.Colors.GREEN):
             open=True,
             on_dismiss=_on_dismiss,
         )
-        page.overlay.append(snack)
+        append_dialog(page, snack)
         page.update()
     except Exception as ex:
         print("SNACK ERROR:", ex, "| message:", message)
@@ -150,7 +150,7 @@ def themed_panel(page: ft.Page, content, padding=None, radius=6):
         theme_mode = getattr(page, "theme_mode", ft.ThemeMode.SYSTEM)
         is_dark = (
             theme_mode == ft.ThemeMode.DARK
-            or (theme_mode == ft.ThemeMode.SYSTEM and getattr(page, "_system_is_dark", True))
+            or (theme_mode == ft.ThemeMode.SYSTEM and getattr(page.mrma, "_system_is_dark", True))
         )
 
         if is_dark:
@@ -256,7 +256,7 @@ def make_info_button(page: ft.Page, title: str, lines: list) -> "ft.IconButton":
                 on_dismiss=_close,
             )
             setattr(page, dlg_key, dlg)
-            page.overlay.append(dlg)
+            append_dialog(page, dlg)
 
         dlg = getattr(page, dlg_key)
         dlg.open = True
@@ -275,3 +275,6 @@ def make_info_button(page: ft.Page, title: str, lines: list) -> "ft.IconButton":
         ),
         on_click=_open,
     )
+def append_dialog(page, dlg):
+    if dlg not in page.overlay:
+        page.overlay.append(dlg)

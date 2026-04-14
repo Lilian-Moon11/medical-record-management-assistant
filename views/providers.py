@@ -18,7 +18,7 @@
 from __future__ import annotations
 import flet as ft
 
-from utils.ui_helpers import show_snack, themed_panel, pt_scale, make_info_button
+from utils.ui_helpers import append_dialog, show_snack, themed_panel, pt_scale, make_info_button
 from database import (
     list_providers,
     create_provider,
@@ -36,17 +36,17 @@ def get_providers_view(page: ft.Page):
     # ----------------------------
     # Stable dialog state holders
     # ----------------------------
-    if not hasattr(page, "_pending_provider_delete"):
-        page._pending_provider_delete = None  # (provider_id, provider_name)
+    if not hasattr(page.mrma, "_pending_provider_delete"):
+        page.mrma._pending_provider_delete = None  # (provider_id, provider_name)
 
-    if not hasattr(page, "_editing_provider_id"):
-        page._editing_provider_id = None  # None=new, int=edit
+    if not hasattr(page.mrma, "_editing_provider_id"):
+        page.mrma._editing_provider_id = None  # None=new, int=edit
 
     # ----------------------------
     # Table (created early so funcs can reference it)
     # ----------------------------
-    _show_source = bool(getattr(page, "_show_source", False))
-    _show_updated = bool(getattr(page, "_show_updated", False))
+    _show_source = True
+    _show_updated = bool(getattr(page.mrma, "_show_updated", False))
 
     prov_cols = [
         ft.DataColumn(ft.Text("Name")),
@@ -107,8 +107,8 @@ def get_providers_view(page: ft.Page):
     def _build_rows(rows):
         table.rows = []
         for r in rows:
-            # r: (id, name, specialty, clinic, phone, fax, email, address, notes, created_at, updated_at)
-            pid, name, specialty, clinic, phone, _fax, _email, _addr, _notes, _c, _u = r
+            # r: (id, name, specialty, clinic, phone, fax, email, address, notes, source, source_file_name, created_at, updated_at)
+            pid, name, specialty, clinic, phone, _fax, _email, _addr, _notes, source, source_file_name, _c, _u = r
 
             cells = [
                         ft.DataCell(ft.Text(name or "")),
@@ -117,7 +117,49 @@ def get_providers_view(page: ft.Page):
                         ft.DataCell(ft.Text(phone or "")),
             ]
             if _show_source:
-                cells.append(ft.DataCell(ft.Text("User")))
+                if (source or "").lower() == "ai" and source_file_name:
+                    def _open_ai_doc(e, fname=source_file_name):
+                        import os, tempfile, time as _time
+                        from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
+                        from utils.open_file import open_file_cross_platform
+                        try:
+                            cur = page.db_connection.cursor()
+                            cur.execute(
+                                "SELECT file_path FROM documents WHERE patient_id=? AND file_name=? ORDER BY id DESC LIMIT 1",
+                                (patient_id, fname),
+                            )
+                            row = cur.fetchone()
+                            if not row or not row[0]:
+                                show_snack(page, "Source file not found.", "red")
+                                return
+                            from core.paths import resolve_doc_path
+                            resolved = str(resolve_doc_path(row[0]))
+                            if not os.path.exists(resolved):
+                                show_snack(page, "Source file not found.", "red")
+                                return
+                            fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
+                            with open(resolved, "rb") as f:
+                                ciphertext = f.read()
+                            plaintext = decrypt_bytes(fmk, ciphertext)
+                            _, ext = os.path.splitext(fname)
+                            tmp = os.path.join(tempfile.gettempdir(), f"mrma_dec_{int(_time.time())}{ext or '.pdf'}")
+                            with open(tmp, "wb") as f:
+                                f.write(plaintext)
+                            open_file_cross_platform(tmp)
+                            show_snack(page, f"Opened {fname}", "blue")
+                        except Exception as ex:
+                            show_snack(page, f"Open failed: {ex}", "red")
+
+                    cells.append(ft.DataCell(
+                        ft.TextButton(
+                            source_file_name,
+                            on_click=_open_ai_doc,
+                            tooltip="Open source document",
+                            style=ft.ButtonStyle(color=ft.Colors.BLUE, padding=0),
+                        )
+                    ))
+                else:
+                    cells.append(ft.DataCell(ft.Text(source.capitalize() if source else "User")))
             if _show_updated:
                 cells.append(ft.DataCell(ft.Text(_u or "")))
             cells += [
@@ -154,7 +196,7 @@ def get_providers_view(page: ft.Page):
 
         # Sort in-memory by selected column
         def _sort_key(r):
-            # r: (id, name, specialty, clinic, phone, fax, email, address, notes, created_at, updated_at)
+            # r: (id, name, specialty, clinic, phone, fax, email, address, notes, source, source_file_name, created_at, updated_at)
             if sort_column == 0:
                 return str(r[1] or "").lower()
             elif sort_column == 1:
@@ -212,42 +254,42 @@ def get_providers_view(page: ft.Page):
     # Dialog: Add/Edit Provider
     # ----------------------------
     def _ensure_provider_edit_dialog():
-        if getattr(page, "_provider_edit_dlg", None) is not None:
-            return page._provider_edit_dlg
+        if getattr(page.mrma, "_provider_edit_dlg", None) is not None:
+            return page.mrma._provider_edit_dlg
 
-        page._prov_name = ft.TextField(label="Name*", autofocus=True)
-        page._prov_specialty = ft.TextField(label="Specialty")
-        page._prov_clinic = ft.TextField(label="Clinic")
-        page._prov_phone = ft.TextField(label="Phone")
-        page._prov_fax = ft.TextField(label="Fax")
-        page._prov_email = ft.TextField(label="Email")
-        page._prov_address = ft.TextField(label="Address", multiline=True, min_lines=2, max_lines=3)
-        page._prov_notes = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
+        page.mrma._prov_name = ft.TextField(label="Name*", autofocus=True)
+        page.mrma._prov_specialty = ft.TextField(label="Specialty")
+        page.mrma._prov_clinic = ft.TextField(label="Clinic")
+        page.mrma._prov_phone = ft.TextField(label="Phone")
+        page.mrma._prov_fax = ft.TextField(label="Fax")
+        page.mrma._prov_email = ft.TextField(label="Email")
+        page.mrma._prov_address = ft.TextField(label="Address", multiline=True, min_lines=2, max_lines=3)
+        page.mrma._prov_notes = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
 
         def _close(_=None):
-            page._provider_edit_dlg.open = False
+            page.mrma._provider_edit_dlg.open = False
             page.update()
 
         def _save(_=None):
-            name = (page._prov_name.value or "").strip()
+            name = (page.mrma._prov_name.value or "").strip()
             if not name:
                 show_snack(page, "Provider name is required.", "red")
                 return
 
             try:
-                pid = getattr(page, "_editing_provider_id", None)
+                pid = getattr(page.mrma, "_editing_provider_id", None)
                 if pid is None:
                     create_provider(
                         page.db_connection,
                         patient_id,
                         name=name,
-                        specialty=(page._prov_specialty.value or "").strip() or None,
-                        clinic=(page._prov_clinic.value or "").strip() or None,
-                        phone=(page._prov_phone.value or "").strip() or None,
-                        fax=(page._prov_fax.value or "").strip() or None,
-                        email=(page._prov_email.value or "").strip() or None,
-                        address=(page._prov_address.value or "").strip() or None,
-                        notes=(page._prov_notes.value or "").strip() or None,
+                        specialty=(page.mrma._prov_specialty.value or "").strip() or None,
+                        clinic=(page.mrma._prov_clinic.value or "").strip() or None,
+                        phone=(page.mrma._prov_phone.value or "").strip() or None,
+                        fax=(page.mrma._prov_fax.value or "").strip() or None,
+                        email=(page.mrma._prov_email.value or "").strip() or None,
+                        address=(page.mrma._prov_address.value or "").strip() or None,
+                        notes=(page.mrma._prov_notes.value or "").strip() or None,
                     )
                     show_snack(page, "Provider added.", "blue")
                 else:
@@ -256,13 +298,13 @@ def get_providers_view(page: ft.Page):
                         patient_id,
                         provider_id=int(pid),
                         name=name,
-                        specialty=(page._prov_specialty.value or "").strip() or None,
-                        clinic=(page._prov_clinic.value or "").strip() or None,
-                        phone=(page._prov_phone.value or "").strip() or None,
-                        fax=(page._prov_fax.value or "").strip() or None,
-                        email=(page._prov_email.value or "").strip() or None,
-                        address=(page._prov_address.value or "").strip() or None,
-                        notes=(page._prov_notes.value or "").strip() or None,
+                        specialty=(page.mrma._prov_specialty.value or "").strip() or None,
+                        clinic=(page.mrma._prov_clinic.value or "").strip() or None,
+                        phone=(page.mrma._prov_phone.value or "").strip() or None,
+                        fax=(page.mrma._prov_fax.value or "").strip() or None,
+                        email=(page.mrma._prov_email.value or "").strip() or None,
+                        address=(page.mrma._prov_address.value or "").strip() or None,
+                        notes=(page.mrma._prov_notes.value or "").strip() or None,
                     )
                     if updated:
                         show_snack(page, "Provider updated.", "blue")
@@ -274,19 +316,19 @@ def get_providers_view(page: ft.Page):
             except Exception as ex:
                 show_snack(page, f"Save failed: {ex}", "red")
 
-        page._provider_edit_dlg = ft.AlertDialog(
+        page.mrma._provider_edit_dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Provider"),
             content=ft.Container(
                 width=pt_scale(page, 520),
                 content=ft.Column(
                     [
-                        page._prov_name,
-                        ft.Row([page._prov_specialty, page._prov_clinic], wrap=True),
-                        ft.Row([page._prov_phone, page._prov_fax], wrap=True),
-                        page._prov_email,
-                        page._prov_address,
-                        page._prov_notes,
+                        page.mrma._prov_name,
+                        ft.Row([page.mrma._prov_specialty, page.mrma._prov_clinic], wrap=True),
+                        ft.Row([page.mrma._prov_phone, page.mrma._prov_fax], wrap=True),
+                        page.mrma._prov_email,
+                        page.mrma._prov_address,
+                        page.mrma._prov_notes,
                     ],
                     tight=True,
                     scroll=True,
@@ -300,42 +342,42 @@ def get_providers_view(page: ft.Page):
             on_dismiss=_close,
         )
 
-        page.overlay.append(page._provider_edit_dlg)
+        append_dialog(page, page.mrma._provider_edit_dlg)
         page.update()
-        return page._provider_edit_dlg
+        return page.mrma._provider_edit_dlg
 
     def open_new_provider(_=None):
-        page._editing_provider_id = None
+        page.mrma._editing_provider_id = None
         dlg = _ensure_provider_edit_dialog()
         dlg.title = ft.Text("Add Provider")
 
-        page._prov_name.value = ""
-        page._prov_specialty.value = ""
-        page._prov_clinic.value = ""
-        page._prov_phone.value = ""
-        page._prov_fax.value = ""
-        page._prov_email.value = ""
-        page._prov_address.value = ""
-        page._prov_notes.value = ""
+        page.mrma._prov_name.value = ""
+        page.mrma._prov_specialty.value = ""
+        page.mrma._prov_clinic.value = ""
+        page.mrma._prov_phone.value = ""
+        page.mrma._prov_fax.value = ""
+        page.mrma._prov_email.value = ""
+        page.mrma._prov_address.value = ""
+        page.mrma._prov_notes.value = ""
 
         dlg.open = True
         page.update()
 
     def open_edit_provider(provider_row):
-        pid, name, specialty, clinic, phone, fax, email, address, notes, _c, _u = provider_row
+        pid, name, specialty, clinic, phone, fax, email, address, notes, source, source_file_name, _c, _u = provider_row
 
-        page._editing_provider_id = int(pid)
+        page.mrma._editing_provider_id = int(pid)
         dlg = _ensure_provider_edit_dialog()
         dlg.title = ft.Text("Edit Provider")
 
-        page._prov_name.value = name or ""
-        page._prov_specialty.value = specialty or ""
-        page._prov_clinic.value = clinic or ""
-        page._prov_phone.value = phone or ""
-        page._prov_fax.value = fax or ""
-        page._prov_email.value = email or ""
-        page._prov_address.value = address or ""
-        page._prov_notes.value = notes or ""
+        page.mrma._prov_name.value = name or ""
+        page.mrma._prov_specialty.value = specialty or ""
+        page.mrma._prov_clinic.value = clinic or ""
+        page.mrma._prov_phone.value = phone or ""
+        page.mrma._prov_fax.value = fax or ""
+        page.mrma._prov_email.value = email or ""
+        page.mrma._prov_address.value = address or ""
+        page.mrma._prov_notes.value = notes or ""
 
         dlg.open = True
         page.update()
@@ -344,18 +386,18 @@ def get_providers_view(page: ft.Page):
     # Dialog: Confirm Delete
     # ----------------------------
     def _ensure_provider_delete_dialog():
-        if getattr(page, "_provider_delete_dlg", None) is not None:
-            return page._provider_delete_dlg
+        if getattr(page.mrma, "_provider_delete_dlg", None) is not None:
+            return page.mrma._provider_delete_dlg
 
-        page._provider_delete_text = ft.Text("")
+        page.mrma._provider_delete_text = ft.Text("")
 
         def _close(_=None):
-            page._provider_delete_dlg.open = False
-            page._pending_provider_delete = None
+            page.mrma._provider_delete_dlg.open = False
+            page.mrma._pending_provider_delete = None
             page.update()
 
         def _confirm(_=None):
-            pending = page._pending_provider_delete
+            pending = page.mrma._pending_provider_delete
             if not pending:
                 _close()
                 return
@@ -373,10 +415,10 @@ def get_providers_view(page: ft.Page):
             except Exception as ex:
                 show_snack(page, f"Delete failed: {ex}", "red")
 
-        page._provider_delete_dlg = ft.AlertDialog(
+        page.mrma._provider_delete_dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Confirm Delete"),
-            content=page._provider_delete_text,
+            content=page.mrma._provider_delete_text,
             actions=[
                 ft.TextButton("Cancel", on_click=_close),
                 ft.FilledButton("Delete", icon=ft.Icons.DELETE, on_click=_confirm),
@@ -385,14 +427,14 @@ def get_providers_view(page: ft.Page):
             on_dismiss=_close,
         )
 
-        page.overlay.append(page._provider_delete_dlg)
+        append_dialog(page, page.mrma._provider_delete_dlg)
         page.update()
-        return page._provider_delete_dlg
+        return page.mrma._provider_delete_dlg
 
     def open_delete_provider(provider_id: int, provider_name: str):
-        page._pending_provider_delete = (int(provider_id), provider_name or "")
+        page.mrma._pending_provider_delete = (int(provider_id), provider_name or "")
         dlg = _ensure_provider_delete_dialog()
-        page._provider_delete_text.value = f'Delete provider "{provider_name}"?'
+        page.mrma._provider_delete_text.value = f'Delete provider "{provider_name}"?'
         dlg.open = True
         page.update()
 

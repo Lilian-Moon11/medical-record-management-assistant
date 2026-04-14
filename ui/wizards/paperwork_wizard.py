@@ -40,12 +40,13 @@ import random
 from datetime import datetime
 from PyPDFForm import PdfWrapper
 
+from core import paths
 from ai.paperwork import map_pdf_fields
 from ai.paperwork_overlay import fill_static_pdf
 from database.clinical import list_providers
 from database.records_requests import create_request as create_records_request
 from utils.roi_parser import parse_due_date_from_text
-from utils.ui_helpers import pt_scale, show_snack
+from utils.ui_helpers import append_dialog, pt_scale, show_snack
 from PIL import Image, ImageDraw
 import io
 from crypto.file_crypto import get_or_create_file_master_key, encrypt_bytes
@@ -264,6 +265,7 @@ class PaperworkWizard:
         )
         self.next_btn = ft.FilledButton("Next", on_click=self.next_step)
         self._cancel_btn = ft.TextButton("Cancel", on_click=self.close)
+        self._prev_keyboard_handler = getattr(self.page, "on_keyboard_event", None)
         self.page.on_keyboard_event = self.on_key_event
 
         self.dlg = ft.AlertDialog(
@@ -278,7 +280,7 @@ class PaperworkWizard:
 
         # IMPORTANT: mount dialog ONCE so open() actually shows it
         if self.dlg not in self.page.overlay:
-            self.page.overlay.append(self.dlg)
+            self.append_dialog(page, self.dlg)
 
     async def on_key_event(self, e: ft.KeyboardEvent):
         """Triggers next_step when Enter is pressed and the dialog is open."""
@@ -325,7 +327,7 @@ class PaperworkWizard:
         
     def open(self):
         if self.dlg not in self.page.overlay:
-            self.page.overlay.append(self.dlg)
+            self.append_dialog(page, self.dlg)
 
         self.render_step()
 
@@ -334,7 +336,11 @@ class PaperworkWizard:
 
     def close(self, e=None):
         self.dlg.open = False
-        self.dlg.update()
+        self.page.on_keyboard_event = getattr(self, "_prev_keyboard_handler", None)
+        try:
+            self.dlg.update()
+        except Exception:
+            pass
         self.page.update()
 
     def render_step(self):
@@ -694,7 +700,7 @@ class PaperworkWizard:
 
                     if self.save_to_db_check.value:
                         try:
-                            dest_dir = os.path.join(os.getcwd(), "data", str(self.patient_id))
+                            dest_dir = os.path.join(paths.data_dir, str(self.patient_id))
                             os.makedirs(dest_dir, exist_ok=True)
                             display_name = f"{form_prefix}_Draft_{timestamp}.pdf"
                             enc_path = os.path.join(dest_dir, display_name + ".enc")
@@ -908,7 +914,7 @@ class PaperworkWizard:
                     ).fill(mapping).read()
 
                 try:
-                    dest_dir = os.path.join(os.getcwd(), "data", str(self.patient_id))
+                    dest_dir = os.path.join(paths.data_dir, str(self.patient_id))
                     os.makedirs(dest_dir, exist_ok=True)
 
                     display_name = f"{form_prefix}_Signed_{timestamp}.pdf"
@@ -1017,7 +1023,7 @@ class PaperworkWizard:
             # Refresh the Overview panel if it is currently visible
             if hasattr(self.page, "_refresh_requests_panel"):
                 try:
-                    self.page._refresh_requests_panel()
+                    self.page.mrma._refresh_requests_panel()
                 except Exception:
                     pass
         except Exception as ex:

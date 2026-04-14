@@ -35,8 +35,12 @@ import os
 import shutil
 
 
+class MRMAState:
+    pass
+
 def init_page_state(page) -> None:
     """Initialize all expected page attributes in one place."""
+    page.mrma = MRMAState()  # Global UI state encapsulation
     page.current_profile = None
     page.db_connection = None
     page.is_high_contrast = False
@@ -78,6 +82,13 @@ def clear_session(page) -> None:
     # Clear shell refs
     page.nav_rail = None
     page.content_area = None
+
+    # Clear stale overlay dialogs from previous session views
+    try:
+        page.overlay.clear()
+    except Exception:
+        pass
+    page.mrma = MRMAState()
 
 
 def is_unlocked(page) -> bool:

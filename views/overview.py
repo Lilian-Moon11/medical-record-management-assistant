@@ -30,8 +30,9 @@ from database.records_requests import (
     update_notes as update_request_notes,
     update_request_status,
 )
-from utils.ui_helpers import pt_scale, themed_panel, show_snack, make_info_button
+from utils.ui_helpers import append_dialog, pt_scale, themed_panel, show_snack, make_info_button
 from utils.pdf_gen import generate_summary_pdf
+from database.clinical import get_pending_suggestion_count
 from ui.wizards.paperwork_wizard import PaperworkWizard
 
 
@@ -181,7 +182,9 @@ def _inline_date_row(
                     return
                 human_name, enc_path = row
                 fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
-                with open(enc_path, "rb") as _f:
+                from core.paths import resolve_doc_path
+                resolved = str(resolve_doc_path(enc_path))
+                with open(resolved, "rb") as _f:
                     ciphertext = _f.read()
                 plaintext = decrypt_bytes(fmk, ciphertext)
                 _, ext = _os.path.splitext(human_name)
@@ -448,7 +451,7 @@ def _build_requests_panel(page: ft.Page, patient_id: int) -> ft.Column:
     refresh()
 
     # Expose refresh so outside code (wizard hook, upload hook) can call it
-    page._refresh_requests_panel = refresh
+    page.mrma._refresh_requests_panel = refresh
 
     def _add(_e=None):
         open_add_request_dialog(page, patient_id, on_saved=refresh)
@@ -518,27 +521,31 @@ def get_overview_view(page: ft.Page):
     )
 
     # --- Summary PDF dialog (created once per session) ---
-    if not hasattr(page, "_summary_options_dlg"):
-        page._summary_opt_ins   = ft.Checkbox(label="Insurance Coverage",      value=True)
-        page._summary_opt_all   = ft.Checkbox(label="Allergies & Alerts",      value=True)
-        page._summary_opt_labs  = ft.Checkbox(label="Abnormal Labs (All-time)", value=True)
-        page._summary_opt_meds  = ft.Checkbox(label="Current Medications",     value=True)
-        page._summary_opt_cond  = ft.Checkbox(label="Active Conditions",       value=True)
-        page._summary_opt_notes = ft.Checkbox(label="General Notes",           value=True)
+    if not hasattr(page.mrma, "_summary_options_dlg"):
+        page.mrma._summary_opt_ins   = ft.Checkbox(label="Insurance Coverage",      value=True)
+        page.mrma._summary_opt_all   = ft.Checkbox(label="Allergies & Alerts",      value=True)
+        page.mrma._summary_opt_labs  = ft.Checkbox(label="Abnormal Labs (All-time)", value=True)
+        page.mrma._summary_opt_meds  = ft.Checkbox(label="Current Medications",     value=True)
+        page.mrma._summary_opt_cond  = ft.Checkbox(label="Active Conditions",       value=True)
+        page.mrma._summary_opt_notes = ft.Checkbox(label="General Notes",           value=True)
+        page.mrma._summary_opt_vacs  = ft.Checkbox(label="Vaccines",                value=True)
+        page.mrma._summary_opt_fam   = ft.Checkbox(label="Family History",          value=True)
 
         def _do_export(e):
-            page._summary_options_dlg.open = False
+            page.mrma._summary_options_dlg.open = False
             page.update()
             import os
             from utils.open_file import open_file_cross_platform
             try:
                 opts = {
-                    "insurance":  page._summary_opt_ins.value,
-                    "allergies":  page._summary_opt_all.value,
-                    "labs":       page._summary_opt_labs.value,
-                    "meds":       page._summary_opt_meds.value,
-                    "conditions": page._summary_opt_cond.value,
-                    "notes":      page._summary_opt_notes.value,
+                    "insurance":  page.mrma._summary_opt_ins.value,
+                    "allergies":  page.mrma._summary_opt_all.value,
+                    "labs":       page.mrma._summary_opt_labs.value,
+                    "meds":       page.mrma._summary_opt_meds.value,
+                    "conditions": page.mrma._summary_opt_cond.value,
+                    "notes":      page.mrma._summary_opt_notes.value,
+                    "vaccines":   page.mrma._summary_opt_vacs.value,
+                    "family_history": page.mrma._summary_opt_fam.value,
                 }
                 path = generate_summary_pdf(page.db_connection, patient[0], options=opts)
                 show_snack(page, "PDF Generated!", "green")
@@ -547,20 +554,22 @@ def get_overview_view(page: ft.Page):
                 show_snack(page, f"PDF Error: {ex}", "red")
 
         def _close_dlg(e):
-            page._summary_options_dlg.open = False
+            page.mrma._summary_options_dlg.open = False
             page.update()
 
-        page._summary_options_dlg = ft.AlertDialog(
+        page.mrma._summary_options_dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Customize Summary", size=pt_scale(page, 18), weight="bold"),
             content=ft.Column([
                 ft.Text("Select the sections to include in the PDF:", size=pt_scale(page, 14)),
-                page._summary_opt_ins,
-                page._summary_opt_all,
-                page._summary_opt_labs,
-                page._summary_opt_meds,
-                page._summary_opt_cond,
-                page._summary_opt_notes,
+                page.mrma._summary_opt_ins,
+                page.mrma._summary_opt_all,
+                page.mrma._summary_opt_labs,
+                page.mrma._summary_opt_meds,
+                page.mrma._summary_opt_cond,
+                page.mrma._summary_opt_notes,
+                page.mrma._summary_opt_vacs,
+                page.mrma._summary_opt_fam,
             ], tight=True),
             actions=[
                 ft.TextButton("Cancel", on_click=_close_dlg),
@@ -568,10 +577,10 @@ def get_overview_view(page: ft.Page):
             ],
             on_dismiss=_close_dlg,
         )
-        page.overlay.append(page._summary_options_dlg)
+        append_dialog(page, page.mrma._summary_options_dlg)
 
     def handle_generate_pdf(e):
-        page._summary_options_dlg.open = True
+        page.mrma._summary_options_dlg.open = True
         page.update()
 
     def start_paperwork_wizard(e):
@@ -580,15 +589,7 @@ def get_overview_view(page: ft.Page):
 
     # --- AI Inbox badge (live-updatable) ---
     def _count_pending():
-        try:
-            cur = page.db_connection.cursor()
-            cur.execute(
-                "SELECT COUNT(*) FROM ai_extraction_inbox WHERE patient_id=? AND status='pending'",
-                (patient_id,),
-            )
-            return cur.fetchone()[0]
-        except Exception:
-            return 0
+        return get_pending_suggestion_count(page.db_connection, patient_id)
 
     from ui.ai_review_dialog import show_ai_review_dialog
 
@@ -602,7 +603,7 @@ def get_overview_view(page: ft.Page):
         on_click=_open_review,
         visible=False,
     )
-    page._overview_review_btn = review_btn
+    page.mrma._overview_review_btn = review_btn
 
     def _refresh_review_btn():
         count = _count_pending()
@@ -614,7 +615,7 @@ def get_overview_view(page: ft.Page):
             pass
 
     _refresh_review_btn()
-    page._refresh_overview_review_btn = _refresh_review_btn
+    page.mrma._refresh_overview_review_btn = _refresh_review_btn
 
     _info_btn = make_info_button(page, "Overview", [
         "You will find question marks located in the top right of each tab (like the one that you clicked to get here) that will give you some information/suggestions/appreciation as you navigate.",

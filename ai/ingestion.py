@@ -10,8 +10,8 @@
 # Background document ingestion pipeline.
 #
 # Fetches unindexed documents for a patient, decrypts them, extracts text
-# (PDF-native → scanned-PDF OCR → image OCR), chunks the text, and inserts
-# chunks into document_chunks.
+# (PDF-native → scanned-PDF OCR → image OCR), runs AI field extraction,
+# and inserts suggestions into ai_extraction_inbox.
 #
 # Designed to run in a threading.Thread. A threading.Event is used as a
 # cooperative stop signal so the UI can cancel mid-run.
@@ -311,10 +311,8 @@ def run_ingestion(
         if not file_path:
             continue
 
-        full_path = (
-            file_path if os.path.isabs(file_path)
-            else os.path.join(data_dir, file_path)
-        )
+        from core.paths import resolve_doc_path
+        full_path = str(resolve_doc_path(file_path))
 
         if not os.path.isfile(full_path):
             logger.warning("Encrypted file not found, skipping: %s", full_path)

@@ -120,8 +120,8 @@ def apply_settings(page, *, get_view_for_index):
         page.is_high_contrast = high_contrast
 
         # Provenance columns in Health Record / Labs / Providers
-        page._show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
-        page._show_updated = get_setting(page.db_connection, "ui.show_updated", "0") == "1"
+        page.mrma._show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
+        page.mrma._show_updated = get_setting(page.db_connection, "ui.show_updated", "0") == "1"
 
         # Flush page-level changes (theme_mode, bgcolor, theme) first.
         page.update()
