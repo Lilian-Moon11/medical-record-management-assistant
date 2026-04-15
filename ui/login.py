@@ -1,80 +1,43 @@
 from __future__ import annotations
 from utils.ui_helpers import append_dialog, make_info_button
 # Copyright (C) 2026 Lilian-Moon11
-
 #
-
 # This program is free software: you can redistribute it and/or modify
-
 # it under the terms of the GNU Affero General Public License as
-
 # published by the Free Software Foundation, either version 3 of the
-
 # License, or any later version.
 
-
-
 # -----------------------------------------------------------------------------
-
 # PURPOSE:
-
 # Login view builder for unlocking the local encrypted vault.
-
 #
-
 # This module renders the secure login UI and orchestrates the initial unlock
-
 # workflow, including vault creation on first run, cryptographic self-testing,
-
 # and initializing in-memory session state for the active app session.
-
 #
-
 # Responsibilities include:
-
 # - Rendering the password entry UI and "Forgot password?" entry point
-
 # - Opening or creating the encrypted vault using the provided password
-
 # - Running startup self-tests to verify key consistency and fail closed on
-
 #   suspected corruption or mismatched credentials
-
 # - Storing unlocked session state (DB connection, DMK, vault path, password)
-
 #   in memory only via app_state (never persisted to disk)
-
 # - Triggering the recovery-key ceremony on first-run vault creation
-
 # - Loading the active patient profile and handing control back to the app shell
-
 #   via callbacks (on_unlocked / on_show_recovery / on_open_forgot_password)
-
 # -----------------------------------------------------------------------------
-
-
 
 import os
-
 import time
-
 import asyncio
-
 import logging
-
 import flet as ft
 
-
 from database import open_or_create_vault, get_profile, vault_exists
-
 from core.startup import run_self_test
-
 from core import app_state
-
 from utils.airlock import import_profile, peek_manifest, find_merge_candidates
-
 logger = logging.getLogger(__name__)
-
 
 # ── Rate-limiting constants ──────────────────────────────────────────────────
 

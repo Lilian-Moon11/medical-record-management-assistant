@@ -1,10 +1,11 @@
-from utils.ui_helpers import append_dialog
 # Copyright (C) 2026 Lilian-Moon11
 # Placement Review — interactive drag-to-correct dialog for static PDF overlays.
 #
 # Shows the AI-merged PDF as a scrollable background image. Each placed text
 # value appears as a draggable chip the user can slide to its correct position.
 # Clicking "Save Final" rebuilds the overlay with updated coordinates.
+
+from utils.ui_helpers import append_dialog
 
 import os
 import logging
