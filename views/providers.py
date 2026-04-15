@@ -18,7 +18,7 @@
 from __future__ import annotations
 import flet as ft
 
-from utils.ui_helpers import append_dialog, show_snack, themed_panel, pt_scale, make_info_button
+from utils.ui_helpers import OUTLINE_VARIANT, append_dialog, show_snack, themed_panel, pt_scale, make_info_button
 from database import (
     list_providers,
     create_provider,
@@ -94,8 +94,7 @@ def get_providers_view(page: ft.Page):
         heading_row_height=pt_scale(page, 40),
         data_row_min_height=pt_scale(page, 40),
         data_row_max_height=pt_scale(page, 52),
-        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
-        if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+        border=ft.Border.all(1, OUTLINE_VARIANT),
         border_radius=8,
     )
 

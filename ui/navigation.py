@@ -62,7 +62,7 @@ def show_main_dashboard(page: ft.Page, *, get_view_for_index):
                 ft.NavigationRailDestination(icon=ft.Icons.SHOW_CHART, label="Vitals & Labs"),
                 ft.NavigationRailDestination(icon=ft.Icons.FOLDER, label="Documents"),
                 ft.NavigationRailDestination(icon=ft.Icons.LOCAL_HOSPITAL, label="Providers"),
-                ft.NavigationRailDestination(icon=ft.Icons.VACCINES, label="Vaccines"),
+                ft.NavigationRailDestination(icon=ft.Icons.VACCINES, label="Immunizations"),
                 ft.NavigationRailDestination(icon=ft.Icons.ACCOUNT_TREE, label="Family History"),
                 ft.NavigationRailDestination(icon=ft.Icons.SETTINGS, label="Settings"),
             ],

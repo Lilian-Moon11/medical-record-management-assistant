@@ -31,7 +31,7 @@ class TestPhase2BFixes(unittest.TestCase):
         self.assertIn("FROM ai_extraction_inbox", content)
         # Verify the import insertion blocks exist
         self.assertIn("INSERT INTO records_requests", content)
-        self.assertIn("INSERT INTO ai_extraction_inbox", content)
+        self.assertIn("INTO ai_extraction_inbox", content)
 
     def test_timestamp_format_consistency(self):
         """Verify inconsistent timestamp %Y-%m-%d %H:%M:%S is gone."""

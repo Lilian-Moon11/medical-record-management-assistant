@@ -156,6 +156,10 @@ def generate_summary_pdf(db_conn, patient_id, options=None):
         draw_section_table("Active Conditions", "conditions.list", 
                        [("name", "Condition"), ("onset_date", "Onset Date"), ("symptoms", "Symptoms")])
 
+    if options.get('procedures', True):
+        draw_section_table("Surgeries / Procedures", "procedures.list",
+                       [("name", "Procedure"), ("date", "Date"), ("surgeon", "Surgeon"), ("facility", "Facility")])
+
     # Providers
     if options.get('providers', True):
         try:
@@ -180,9 +184,9 @@ def generate_summary_pdf(db_conn, patient_id, options=None):
                 pdf.ln()
             pdf.ln(5)
 
-    if options.get('vaccines', True):
-        draw_section_table("Vaccines / Immunizations", "immunization.list",
-                       [("vaccine", "Vaccine"), ("date", "Date"), ("notes", "Notes")])
+    if options.get('immunizations', True):
+        draw_section_table("Immunizations / Immunizations", "immunization.list",
+                       [("immunization", "Immunization"), ("date", "Date"), ("notes", "Notes")])
 
     if options.get('family_history', True):
         # The schema uses name, relation, condition

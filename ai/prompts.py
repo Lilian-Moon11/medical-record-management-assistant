@@ -30,7 +30,7 @@ Expected JSON Structure for List Items:
 - vitals.list: {{"name": "...", "value": "...", "unit": "...", "date": "YYYY-MM-DD"}}
 - lab_results.list: {{"name": "...", "value_text": "...", "unit": "...", "abnormal_flag": "...", "date": "YYYY-MM-DD"}}
 - providers.list: {{"name": "...", "specialty": "...", "clinic": "...", "phone": "...", "fax": "...", "address": "..."}}
-- immunization.list: {{"vaccine": "...", "date": "YYYY-MM-DD", "lot": "...", "administered_by": "...", "notes": "..."}}
+- immunization.list: {{"immunization": "...", "date": "YYYY-MM-DD", "lot": "...", "administered_by": "...", "notes": "..."}}
 - family_history.list: {{"relation": "...", "condition": "...", "notes": "..."}}
 - allergyintolerance.list: {{"substance": "...", "reaction": "...", "notes": "..."}}
 - medicationstatement.current_list: {{"name": "...", "dose": "...", "frequency": "...", "notes": "..."}}

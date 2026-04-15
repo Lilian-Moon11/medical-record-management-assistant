@@ -20,71 +20,57 @@ from database.records_requests import create_request
 from utils.ui_helpers import append_dialog, pt_scale, show_snack
 
 
-def open_add_request_dialog(
-    page: ft.Page,
-    patient_id: int,
-    on_saved: callable,
-) -> None:
-    """Mount and open the Add Request dialog.
+def _ensure_add_request_dialog(page: ft.Page, on_saved: callable) -> ft.AlertDialog:
+    if hasattr(page.mrma, "_add_req_dlg"):
+        return page.mrma._add_req_dlg
 
-    Args:
-        page:       The Flet page (for overlay access and scaling).
-        patient_id: Current patient's DB id.
-        on_saved:   Zero-argument callable triggered after a successful save.
-    """
-
-    # ── Fields ────────────────────────────────────────────────────────────────
-    provider_field = ft.TextField(
+    page.mrma._ar_provider = ft.TextField(
         label="Provider / Office Name *",
         hint_text="e.g. Stanford Medicine, Dr. Reyes",
         autofocus=True,
     )
-    department_field = ft.TextField(
+    page.mrma._ar_department = ft.TextField(
         label="Department (optional)",
         hint_text="Helpful for large networks, e.g. Oncology",
     )
-    date_requested_field = ft.TextField(
+    page.mrma._ar_date_req = ft.TextField(
         label="Date Requested",
-        value=datetime.today().strftime("%Y-%m-%d"),
+        value="",
         hint_text="YYYY-MM-DD",
     )
-    due_date_field = ft.TextField(
+    page.mrma._ar_due_date = ft.TextField(
         label="Due Date",
-        value=(datetime.today() + timedelta(days=30)).strftime("%Y-%m-%d"),
+        value="",
         hint_text="YYYY-MM-DD  (default: 30 days)",
     )
-    notes_field = ft.TextField(
+    page.mrma._ar_notes = ft.TextField(
         label="Notes (optional)",
         multiline=True,
         min_lines=2,
         max_lines=4,
     )
 
-    # ── Dialog lifecycle ──────────────────────────────────────────────────────
-    _dlg_key = "_add_request_dlg"
-
     def _close(_e=None):
-        dlg = getattr(page, _dlg_key, None)
-        if dlg:
-            dlg.open = False
-            try:
-                dlg.update()
-            except Exception:
-                pass
+        page.mrma._add_req_dlg.open = False
+        try:
+            page.mrma._add_req_dlg.update()
+        except Exception:
+            pass
         page.update()
 
     def _save(_e=None):
-        provider = provider_field.value.strip()
+        patient_id = page.mrma._add_req_dlg._patient_id
+        provider = page.mrma._ar_provider.value.strip()
         if not provider:
-            provider_field.error_text = "Provider name is required."
-            provider_field.update()
+            page.mrma._ar_provider.error_text = "Provider name is required."
+            page.mrma._ar_provider.update()
             return
-        provider_field.error_text = None
+        page.mrma._ar_provider.error_text = None
 
-        department = department_field.value.strip() or None
-        date_req = date_requested_field.value.strip() or datetime.today().strftime("%Y-%m-%d")
-        due = due_date_field.value.strip() or None
-        notes = notes_field.value.strip() or None
+        department = page.mrma._ar_department.value.strip() or None
+        date_req = page.mrma._ar_date_req.value.strip() or datetime.today().strftime("%Y-%m-%d")
+        due = page.mrma._ar_due_date.value.strip() or None
+        notes = page.mrma._ar_notes.value.strip() or None
         source = "manual" if due else "default"
         if not due:
             due = (datetime.today() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -106,54 +92,19 @@ def open_add_request_dialog(
         except Exception as ex:
             show_snack(page, f"Error saving request: {ex}", "red")
 
-    # ── Build dialog (create-once per session) ────────────────────────────────
-    if not hasattr(page, _dlg_key):
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Row([
-                ft.Icon(ft.Icons.ASSIGNMENT_ADD, color=ft.Colors.PRIMARY),
-                ft.Text("Add Records Request", weight="bold", size=pt_scale(page, 18)),
-            ], spacing=8),
-            content=ft.Container(
-                width=pt_scale(page, 420),
-                content=ft.Column([
-                    provider_field,
-                    department_field,
-                    ft.Row([date_requested_field, due_date_field], spacing=8),
-                    notes_field,
-                    ft.Text(
-                        "* Due date defaults to 30 days if left unchanged.",
-                        size=pt_scale(page, 11),
-                        color=ft.Colors.SECONDARY,
-                        italic=True,
-                    ),
-                ], spacing=pt_scale(page, 10), tight=True),
-            ),
-            actions=[
-                ft.TextButton("Cancel", on_click=_close),
-                ft.FilledButton("Save Request", icon=ft.Icons.SAVE, on_click=_save),
-            ],
-            on_dismiss=_close,
-        )
-        setattr(page, _dlg_key, dlg)
-        append_dialog(page, dlg)
-    else:
-        # Reset fields for reuse
-        dlg = getattr(page, _dlg_key)
-        provider_field.value = ""
-        provider_field.error_text = None
-        department_field.value = ""
-        date_requested_field.value = datetime.today().strftime("%Y-%m-%d")
-        due_date_field.value = (datetime.today() + timedelta(days=30)).strftime("%Y-%m-%d")
-        notes_field.value = ""
-        # Rebuild content with fresh field refs so closures bind correctly
-        dlg.content = ft.Container(
+    page.mrma._add_req_dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Row([
+            ft.Icon(ft.Icons.ASSIGNMENT_ADD, color=ft.Colors.PRIMARY),
+            ft.Text("Add Records Request", weight="bold", size=pt_scale(page, 18)),
+        ], spacing=8),
+        content=ft.Container(
             width=pt_scale(page, 420),
             content=ft.Column([
-                provider_field,
-                department_field,
-                ft.Row([date_requested_field, due_date_field], spacing=8),
-                notes_field,
+                page.mrma._ar_provider,
+                page.mrma._ar_department,
+                ft.Row([page.mrma._ar_date_req, page.mrma._ar_due_date], spacing=8),
+                page.mrma._ar_notes,
                 ft.Text(
                     "* Due date defaults to 30 days if left unchanged.",
                     size=pt_scale(page, 11),
@@ -161,16 +112,40 @@ def open_add_request_dialog(
                     italic=True,
                 ),
             ], spacing=pt_scale(page, 10), tight=True),
-        )
-        dlg.actions = [
+        ),
+        actions=[
             ft.TextButton("Cancel", on_click=_close),
             ft.FilledButton("Save Request", icon=ft.Icons.SAVE, on_click=_save),
-        ]
+        ],
+        on_dismiss=_close,
+    )
+    
+    append_dialog(page, page.mrma._add_req_dlg)
+    return page.mrma._add_req_dlg
 
-    dlg = getattr(page, _dlg_key)
+
+def open_add_request_dialog(
+    page: ft.Page,
+    patient_id: int,
+    on_saved: callable,
+) -> None:
+    """Mount and open the Add Request dialog.
+
+    Args:
+        page:       The Flet page (for overlay access and scaling).
+        patient_id: Current patient's DB id.
+        on_saved:   Zero-argument callable triggered after a successful save.
+    """
+    dlg = _ensure_add_request_dialog(page, on_saved)
+    dlg._patient_id = patient_id
+
+    # Reset fields
+    page.mrma._ar_provider.value = ""
+    page.mrma._ar_provider.error_text = None
+    page.mrma._ar_department.value = ""
+    page.mrma._ar_date_req.value = datetime.today().strftime("%Y-%m-%d")
+    page.mrma._ar_due_date.value = (datetime.today() + timedelta(days=30)).strftime("%Y-%m-%d")
+    page.mrma._ar_notes.value = ""
+
     dlg.open = True
-    try:
-        dlg.update()
-    except Exception:
-        pass
     page.update()

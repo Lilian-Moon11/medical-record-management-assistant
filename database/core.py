@@ -94,16 +94,29 @@ def init_db_with_db_key(db_key_raw: bytes):
     return ThreadSafeConnection(conn)
 
 
-def open_or_create_vault(password: str):
+def vault_exists() -> bool:
+    """Return True if a keybag (and therefore a vault) already exists on disk."""
+    return load_keybag(str(paths.db_path)) is not None
+
+
+def open_or_create_vault(password: str, *, allow_create: bool = False):
     """
     Open the vault with a password, or create a new one on first run.
     Returns (conn, db_key_raw, db_path_str, recovery_key).
     recovery_key is non-None only on first-run vault creation.
+
+    If allow_create is False (the default) and no vault exists yet,
+    raises a ValueError instead of silently creating one.  This
+    prevents accidental vault creation from password typos.
     """
     db_path_str = str(paths.db_path)
     kb = load_keybag(db_path_str)
     recovery_key = None
     if kb is None:
+        if not allow_create:
+            raise ValueError(
+                "No vault exists yet. Please use the Create Vault flow."
+            )
         db_key_raw, recovery_key = create_new_keybag(db_path_str, password)
     else:
         db_key_raw = unlock_db_key_with_password(db_path_str, password)

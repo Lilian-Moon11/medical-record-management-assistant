@@ -26,7 +26,7 @@
 import os
 import flet as ft
 from database import get_setting, set_setting
-from utils.ui_helpers import append_dialog, pt_scale, show_snack, run_async, copy_with_snack, make_info_button
+from utils.ui_helpers import OUTLINE_VARIANT, append_dialog, pt_scale, show_snack, run_async, copy_with_snack, make_info_button
 from utils.airlock import export_profile
 from crypto.keybag import verify_password, rotate_recovery_key, generate_recovery_key_b64
 
@@ -76,7 +76,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 "providers": ft.Checkbox(label="Providers", value=True),
                 "labs": ft.Checkbox(label="Labs", value=True),
                 "documents": ft.Checkbox(label="Documents (includes decrypted PDFs)", value=True),
-                "vaccines": ft.Checkbox(label="Vaccines / Immunizations", value=True),
+                "immunizations": ft.Checkbox(label="Immunizations / Immunizations", value=True),
                 "family_history": ft.Checkbox(label="Family History", value=True),
             }
             
@@ -148,7 +148,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     ft.Text("Anyone who accesses this file will be able to read all of your medical data!"),
                     ft.Divider(),
                     ft.Text("Select which data to include:", size=pt_scale(page, 13)),
-                    opts["overview"], opts["health_record"], opts["providers"], opts["labs"], opts["documents"], opts["vaccines"], opts["family_history"],
+                    opts["overview"], opts["health_record"], opts["providers"], opts["labs"], opts["documents"], opts["immunizations"], opts["family_history"],
                     ft.Divider(),
                     password_field,
                     password_error,
@@ -158,7 +158,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     ft.FilledButton("Understand & Proceed", color=ft.Colors.RED, icon=ft.Icons.WARNING, on_click=_do_unenc_export),
                 ]
             )
-            from utils.ui_helpers import append_dialog
+            from utils.ui_helpers import OUTLINE_VARIANT, append_dialog
             append_dialog(page, page.mrma._unenc_dlg)
             page.mrma._unenc_dlg.open = True
             page.update()
@@ -526,8 +526,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                         ),          
                         ft.Container(
                             padding=10,
-                            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
-                            if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+                            border=ft.Border.all(1, OUTLINE_VARIANT),
                             content=page.mrma._new_rk_text,
                         ),
                         ft.Row(

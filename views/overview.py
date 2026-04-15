@@ -30,7 +30,7 @@ from database.records_requests import (
     update_notes as update_request_notes,
     update_request_status,
 )
-from utils.ui_helpers import append_dialog, pt_scale, themed_panel, show_snack, make_info_button
+from utils.ui_helpers import OUTLINE_VARIANT, append_dialog, pt_scale, themed_panel, show_snack, make_info_button
 from utils.pdf_gen import generate_summary_pdf
 from database.clinical import get_pending_suggestion_count
 from ui.wizards.paperwork_wizard import PaperworkWizard
@@ -491,8 +491,8 @@ def get_overview_view(page: ft.Page):
         multiline=True,
         min_lines=5,
         expand=True,
-        border_color=ft.Colors.OUTLINE_VARIANT,
-        focused_border_color=ft.Colors.OUTLINE_VARIANT,
+        border_color=OUTLINE_VARIANT,
+        focused_border_color=OUTLINE_VARIANT,
     )
 
     def save_notes(e):
@@ -527,8 +527,10 @@ def get_overview_view(page: ft.Page):
         page.mrma._summary_opt_labs  = ft.Checkbox(label="Abnormal Labs (All-time)", value=True)
         page.mrma._summary_opt_meds  = ft.Checkbox(label="Current Medications",     value=True)
         page.mrma._summary_opt_cond  = ft.Checkbox(label="Active Conditions",       value=True)
+        page.mrma._summary_opt_procs = ft.Checkbox(label="Procedures",              value=True)
         page.mrma._summary_opt_notes = ft.Checkbox(label="General Notes",           value=True)
-        page.mrma._summary_opt_vacs  = ft.Checkbox(label="Vaccines",                value=True)
+        page.mrma._summary_opt_prov  = ft.Checkbox(label="Provider Directory",      value=True)
+        page.mrma._summary_opt_vacs  = ft.Checkbox(label="Immunizations",           value=True)
         page.mrma._summary_opt_fam   = ft.Checkbox(label="Family History",          value=True)
 
         def _do_export(e):
@@ -543,8 +545,10 @@ def get_overview_view(page: ft.Page):
                     "labs":       page.mrma._summary_opt_labs.value,
                     "meds":       page.mrma._summary_opt_meds.value,
                     "conditions": page.mrma._summary_opt_cond.value,
+                    "procedures": page.mrma._summary_opt_procs.value,
                     "notes":      page.mrma._summary_opt_notes.value,
-                    "vaccines":   page.mrma._summary_opt_vacs.value,
+                    "providers":  page.mrma._summary_opt_prov.value,
+                    "immunizations": page.mrma._summary_opt_vacs.value,
                     "family_history": page.mrma._summary_opt_fam.value,
                 }
                 path = generate_summary_pdf(page.db_connection, patient[0], options=opts)
@@ -567,7 +571,9 @@ def get_overview_view(page: ft.Page):
                 page.mrma._summary_opt_labs,
                 page.mrma._summary_opt_meds,
                 page.mrma._summary_opt_cond,
+                page.mrma._summary_opt_procs,
                 page.mrma._summary_opt_notes,
+                page.mrma._summary_opt_prov,
                 page.mrma._summary_opt_vacs,
                 page.mrma._summary_opt_fam,
             ], tight=True),

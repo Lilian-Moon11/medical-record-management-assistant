@@ -1,4 +1,4 @@
-﻿# Copyright (C) 2026 Lilian-Moon11
+# Copyright (C) 2026 Lilian-Moon11
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -19,6 +19,7 @@
 from .core import (
     open_or_create_vault,
     open_vault_with_recovery,
+    vault_exists,
     get_setting,
     set_setting,
 )
@@ -42,5 +43,5 @@ from .clinical import (
     list_lab_results_for_report, add_lab_result, update_lab_result, delete_lab_result,
     list_distinct_test_names, list_all_results_for_test,
     get_patient_documents, add_document, delete_document,
-    get_document_metadata, get_document_metadata as get_document_path,
+    get_document_metadata,
 )

@@ -34,7 +34,7 @@ def export_unencrypted_profile(
         manifest["records_requests"] = _fetch_all_as_dicts(
             cur, "SELECT * FROM records_requests")
 
-    if tabs.get("health_record", False) or tabs.get("vaccines", False) or tabs.get("family_history", False):
+    if tabs.get("health_record", False) or tabs.get("immunizations", False) or tabs.get("family_history", False):
         manifest["field_definitions"] = _fetch_all_as_dicts(
             cur, "SELECT * FROM field_definitions")
         
@@ -47,7 +47,7 @@ def export_unencrypted_profile(
             keys_to_exclude.append("field_key NOT LIKE 'conditions.%'")
             keys_to_exclude.append("field_key NOT LIKE 'procedures.%'")
             keys_to_exclude.append("field_key NOT LIKE 'insurance.%'")
-        if not tabs.get("vaccines", False):
+        if not tabs.get("immunizations", False):
             keys_to_exclude.append("field_key != 'immunization.list'")
         if not tabs.get("family_history", False):
             keys_to_exclude.append("field_key != 'family_history.list'")
@@ -164,7 +164,7 @@ def export_unencrypted_profile(
                     "conditions": tabs.get("health_record", False),
                     "notes":      tabs.get("health_record", False),
                     "providers":  tabs.get("providers", False),
-                    "vaccines":   tabs.get("vaccines", False),
+                    "immunizations":   tabs.get("immunizations", False),
                     "family_history": tabs.get("family_history", False),
                 }
                 pdf_path = generate_summary_pdf(conn, patient_id, options=pdf_opts)

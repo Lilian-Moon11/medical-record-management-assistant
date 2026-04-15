@@ -253,12 +253,19 @@ def import_profile(conn, dmk_raw: bytes, data_dir: str,
                 patient_id_map[old_id] = merge_map[old_id]
                 # Don't increment counts — we didn't create a new patient
             else:
-                cur.execute(
-                    "INSERT INTO patients (name, dob, notes) VALUES (?, ?, ?)",
-                    (p.get("name"), p.get("dob"), p.get("notes")),
-                )
-                patient_id_map[old_id] = cur.lastrowid
-                counts["patients"] += 1
+                name = (p.get("name") or "").strip()
+                dob = (p.get("dob") or "").strip()
+                cur.execute("SELECT id FROM patients WHERE name = ? AND dob = ?", (name, dob))
+                row = cur.fetchone()
+                if row:
+                    patient_id_map[old_id] = row[0]
+                else:
+                    cur.execute(
+                        "INSERT INTO patients (name, dob, notes) VALUES (?, ?, ?)",
+                        (p.get("name"), p.get("dob"), p.get("notes")),
+                    )
+                    patient_id_map[old_id] = cur.lastrowid
+                    counts["patients"] += 1
 
         # ── field_definitions (idempotent) ──
         for fd in manifest.get("field_definitions", []):

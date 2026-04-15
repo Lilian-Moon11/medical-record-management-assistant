@@ -30,6 +30,8 @@
 import flet as ft
 import re
 
+OUTLINE_VARIANT = getattr(ft.Colors, "OUTLINE_VARIANT", ft.Colors.OUTLINE)
+
 def is_sensitive_flag(v) -> bool:
     try:
         return int(v or 0) == 1
@@ -41,7 +43,7 @@ def detect_data_type_from_label(label: str) -> str:
     if "email" in l: return "email"
     if any(k in l for k in ["phone", "mobile", "cell", "tel"]): return "phone"
     if any(k in l for k in ["dob", "birth", "birthday", "date"]): return "date"
-    if any(k in l for k in ["allerg", "medication", "meds", "rx", "immun", "vaccine", "list"]): return "json"
+    if any(k in l for k in ["allerg", "medication", "meds", "rx", "immun", "immunization", "list"]): return "json"
     return "text"
 
 def slugify_label(label: str) -> str:
@@ -105,13 +107,19 @@ def run_async(page: ft.Page, coro):
     """Run a coroutine reliably from a sync event handler."""
     try:
         if hasattr(page, "run_task"):
-            page.run_task(coro)
-            return
+            try:
+                page.run_task(coro)
+                return
+            except Exception as e:
+                print(f"[run_async] page.run_task failed: {e}")
     except Exception:
         pass
 
     import asyncio
-    asyncio.create_task(coro)
+    try:
+        asyncio.create_task(coro)
+    except Exception as ex:
+        print(f"[run_async] asyncio.create_task failed: {ex}")
 
 async def copy_with_snack(
     page: ft.Page,
@@ -176,8 +184,7 @@ def themed_panel(page: ft.Page, content, padding=None, radius=6):
         content=content,
         padding=padding,
         bgcolor=None,
-        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
-        if hasattr(ft.Colors, "OUTLINE_VARIANT") else None,
+        border=ft.Border.all(1, OUTLINE_VARIANT),
         border_radius=radius,
     )
 
