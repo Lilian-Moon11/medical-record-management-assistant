@@ -59,7 +59,7 @@ def _ensure_add_request_dialog(page: ft.Page, on_saved: callable) -> ft.AlertDia
         page.update()
 
     def _save(_e=None):
-        patient_id = page.mrma._add_req_dlg._patient_id
+        patient_id = page.mrma._add_req_patient_id
         provider = page.mrma._ar_provider.value.strip()
         if not provider:
             page.mrma._ar_provider.error_text = "Provider name is required."
@@ -137,7 +137,7 @@ def open_add_request_dialog(
         on_saved:   Zero-argument callable triggered after a successful save.
     """
     dlg = _ensure_add_request_dialog(page, on_saved)
-    dlg._patient_id = patient_id
+    page.mrma._add_req_patient_id = patient_id
 
     # Reset fields
     page.mrma._ar_provider.value = ""

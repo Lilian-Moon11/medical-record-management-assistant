@@ -1,5 +1,5 @@
 from __future__ import annotations
-from utils.ui_helpers import append_dialog
+from utils.ui_helpers import append_dialog, make_info_button
 # Copyright (C) 2026 Lilian-Moon11
 
 #
@@ -569,8 +569,27 @@ def build_login_view(
         heading_text = "Create Your Vault"
         confirm_field.visible = True
 
+    if _has_vault:
+        _login_help = make_info_button(page, "Welcome Back", [
+            "If you forgot your password, click \"Forgot password?\" to recover access using the recovery key given to you when you created your account.",
+            "Your data never leaves this device. Everything is encrypted locally using AES-256.",
+            "\"Upload Existing Profile\" lets you import a backup from another device (requires the backup's password).",
+        ])
+    else:
+        _login_help = make_info_button(page, "Getting Started", [
+            "Welcome to the Local Patient Advocate! This app helps you organize and manage your medical records securely on your own device.",
+            "Choose a strong password (6+ characters). This password encrypts everything, there is no cloud account and no way to reset it remotely.",
+            "After creating your vault you'll receive a recovery key. Save it somewhere safe (print it, write it down, store it on a USB). It's your only backup if you forget your password.",
+            "Once inside, you can upload medical documents (PDFs, images), and the app will automatically extract health data like medications, allergies, and lab results.",
+            "If you already have a backup from another computer, use \"Upload Existing Profile\" instead of creating a new vault.",
+        ])
+
     login_view = ft.Column(
         [
+            ft.Row(
+                [ft.Container(expand=True), _login_help],
+                alignment=ft.MainAxisAlignment.END,
+            ),
             ft.Container(expand=True),  # top spacer
             ft.Icon(ft.Icons.SECURITY, size=64, color="blue"),
             ft.Text(heading_text, size=30),
@@ -596,9 +615,9 @@ def build_login_view(
         expand=True,
     )
 
-    # Expose a small API back to main for logout/reset
-    login_view._password_field = password_field
-    login_view._error_text = error_text
-    login_view._attempt_login = attempt_login
+    # Expose login controls to main.py for logout/reset via the
+    # established page.mrma state container (not fragile _ attrs).
+    page.mrma.login_password_field = password_field
+    page.mrma.login_error_text = error_text
 
     return login_view

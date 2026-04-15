@@ -6,7 +6,6 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .vs/
-.gemini_scratch/
 test_pack/
 
 # --- Environment Variables ---
@@ -49,4 +48,4 @@ build/flutter/
 build/site-packages/
 build/mrma/
 build/*.pkg
-build/*.exe
+build/*.exe

@@ -448,7 +448,8 @@ def get_providers_view(page: ft.Page):
     _build_rows(initial_rows)
 
     _info_btn = make_info_button(page, "Provider Directory", [
-        "This is primarily used for completion of release of information forms, but can be used for any purpose you choose.",
+        "This directory stores your healthcare providers for quick reference and for auto-filling release of information (ROI) forms via the paperwork wizard.",
+        "Click any column header (Name, Specialty, Clinic) to sort the table. Use the search bar to filter by any field.",
     ])
 
     header = ft.Row(

@@ -714,7 +714,11 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         page.update()
     _info_btn = make_info_button(page, "Settings", [
         "\"Show source of information\" reveals which document or action produced each health record entry, with a hyperlink to the source document where available.",
+        "The Auto-Lock timeout will lock your vault after a period of inactivity, requiring you to re-enter your password. Set to 0 to disable.",
+        "\"Export My Data\" creates an encrypted backup zip protected by your vault password. You can import this on another device using \"Upload Existing Profile\" on the login screen.",
+        "Check \"Save unencrypted data\" to export a plain-text ZIP with a readable PDF summary and your raw documents. This requires password confirmation for safety.",
         "The Recovery Key section lets you rotate to a new key, which will make your old key invalid. A use case for this would be if you suspect your key has been seen by someone else, or if you have lost your key but remember your password. Always save the new key before closing the dialog or the old key stays valid.",
+        "\"Wipe Session & Exit\" is for shared/public computers to securely erases your local database and temporary files so no one can access your data after you leave.",
     ])
 
     # 4. Return Layout

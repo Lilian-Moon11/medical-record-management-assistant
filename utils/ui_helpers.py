@@ -27,8 +27,11 @@
 # - Small UI affordances (e.g., reveal/hide eye icon button)
 # -----------------------------------------------------------------------------
 
+import logging
 import flet as ft
 import re
+
+logger = logging.getLogger(__name__)
 
 OUTLINE_VARIANT = getattr(ft.Colors, "OUTLINE_VARIANT", ft.Colors.OUTLINE)
 
@@ -101,7 +104,7 @@ def show_snack(page: ft.Page, message: str, color=ft.Colors.GREEN):
         append_dialog(page, snack)
         page.update()
     except Exception as ex:
-        print("SNACK ERROR:", ex, "| message:", message)
+        logger.debug("Snack error: %s | message: %s", ex, message)
 
 def run_async(page: ft.Page, coro):
     """Run a coroutine reliably from a sync event handler."""
@@ -111,7 +114,7 @@ def run_async(page: ft.Page, coro):
                 page.run_task(coro)
                 return
             except Exception as e:
-                print(f"[run_async] page.run_task failed: {e}")
+                logger.debug("[run_async] page.run_task failed: %s", e)
     except Exception:
         pass
 
@@ -119,7 +122,7 @@ def run_async(page: ft.Page, coro):
     try:
         asyncio.create_task(coro)
     except Exception as ex:
-        print(f"[run_async] asyncio.create_task failed: {ex}")
+        logger.debug("[run_async] asyncio.create_task failed: %s", ex)
 
 async def copy_with_snack(
     page: ft.Page,
@@ -139,7 +142,7 @@ async def copy_with_snack(
         show_snack(page, ok_message, ok_color)
         return True
     except Exception as ex:
-        print("CLIPBOARD FAIL:", ex)
+        logger.debug("Clipboard copy failed: %s", ex)
         show_snack(page, fail_message, fail_color)
         return False
 

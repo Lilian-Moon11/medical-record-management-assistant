@@ -262,10 +262,8 @@ def build_tree(
     sib_items: list[ft.Control] = []
     for n in sib_nodes:
         sib_items += [n, mk_gap()]
-    for i, n in enumerate(half_sib_nodes):
-        sib_items.append(n)
-        last = (i == len(half_sib_nodes) - 1)
-        sib_items.append(_conn_gap_dotted(s) if (has_hs and last) else mk_gap())
+    for n in half_sib_nodes:
+        sib_items += [n, mk_gap()]
     sib_items.append(you_node)
     siblings_row = spaced_row(sib_items)
 
@@ -327,7 +325,14 @@ def build_tree(
     rows.append(siblings_row)
 
     if has_ch:
-        rows += [_gap(), spaced_row(nodes_for("Child", 4))]
+        ch_nodes = nodes_for("Child", 4)
+        n_ch     = len(ch_nodes)
+        ch_row_w = n_ch * CARD_W + (n_ch - 1) * GAP
+        ch_left  = (CANVAS_W - ch_row_w) / 2
+        ch_xs    = [ch_left + i * (CARD_W + GAP) + CARD_W / 2 for i in range(n_ch)]
+        ch_cx    = sum(ch_xs) / len(ch_xs)
+        rows.append(_lconn(you_x, ch_cx))
+        rows.append(spaced_row(ch_nodes))
 
     other_nodes = by_relation.get("Other", [])
     if other_nodes:

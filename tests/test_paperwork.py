@@ -8,7 +8,7 @@ import sys
 # Add parent dir to path if running directly from tests/
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from ui.wizards.paperwork_wizard import render_signature_png
+from ui.wizards.signature_pad import render_signature_png
 
 class TestPaperworkWizard(unittest.TestCase):
     def test_render_signature_png(self):

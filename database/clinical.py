@@ -28,8 +28,11 @@
 #   lab_results before deleting the parent lab_reports row.
 # -----------------------------------------------------------------------------
 
+import logging
 import os
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 def _now_ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -241,7 +244,7 @@ def delete_document(conn, document_id):
             if os.path.exists(resolved):
                 os.remove(resolved)
         except OSError as ex:
-            print(f"[delete_document] Could not remove {resolved}: {ex}")
+            logger.warning("Could not remove %s: %s", resolved, ex)
 
 
 def get_document_metadata(conn, document_id):

@@ -648,5 +648,5 @@ def map_pdf_fields(
         "paperwork: mapped %d/%d remaining fields via AI (%d checkbox, %d text/enum)",
         len(final_mapping), len(pdf_fields), len(boolean_fields), len(ai_mapping),
     )
-    print(f"AI PDF MAPPING: {final_mapping}")
+    logger.debug("AI PDF mapping keys: %s", list(final_mapping.keys()))
     return final_mapping

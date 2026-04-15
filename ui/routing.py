@@ -26,6 +26,7 @@
 # -----------------------------------------------------------------------------
 
 from __future__ import annotations
+import logging
 import traceback
 import flet as ft
 
@@ -39,6 +40,8 @@ from views.providers import get_providers_view
 from views.labs import get_labs_view
 from views.immunizations import get_immunizations_view
 from views.family_history import get_family_history_view
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -133,8 +136,7 @@ def apply_settings(page, *, get_view_for_index):
             page.content_area.update()
 
     except Exception as e:
-        import traceback
-        print(f"[apply_settings] Error: {e}\n{traceback.format_exc()}")
+        logger.error("[apply_settings] Error: %s", e, exc_info=True)
 
 
 

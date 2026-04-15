@@ -62,7 +62,6 @@ def setup_global_logging():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"),
-            logging.StreamHandler()
         ]
     )
 
@@ -129,14 +128,14 @@ def main(page: ft.Page):
 
     # --- logout (returns to login view) ---
     def logout():
-        app_state.clear_session(page)
-
-        # reset login UI
+        # Reset login UI controls BEFORE clear_session wipes page.mrma
         try:
-            login_view._password_field.value = ""
-            login_view._error_text.visible = False
+            page.mrma.login_password_field.value = ""
+            page.mrma.login_error_text.visible = False
         except Exception:
             pass
+
+        app_state.clear_session(page)
 
         page.root.content = login_view
         page.update()

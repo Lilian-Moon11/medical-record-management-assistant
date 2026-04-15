@@ -7,3 +7,4 @@
 
 from .paperwork_wizard import PaperworkWizard
 from .placement_review import open_placement_review
+from .signature_pad import SignaturePad, render_signature_png

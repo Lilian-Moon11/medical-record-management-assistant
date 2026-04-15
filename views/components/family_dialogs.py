@@ -98,10 +98,10 @@ def _ensure_detail_dialog(page: ft.Page, on_refresh):
 
     def _save(_=None):
         try:
-            rel      = page.mrma._fh_detail_dlg._relation
-            name     = page.mrma._fh_detail_dlg._name
-            rt_type  = page.mrma._fh_detail_dlg._rt_type
-            rt_name  = page.mrma._fh_detail_dlg._rt_name
+            rel      = page.mrma._fh_detail_state["relation"]
+            name     = page.mrma._fh_detail_state["name"]
+            rt_type  = page.mrma._fh_detail_state["rt_type"]
+            rt_name  = page.mrma._fh_detail_state["rt_name"]
             pat = page.current_profile
             if not pat:
                 show_snack(page, "No patient profile.", "red")
@@ -173,20 +173,19 @@ def _ensure_detail_dialog(page: ft.Page, on_refresh):
         ],
         on_dismiss=_close,
     )
-    page.mrma._fh_detail_dlg._relation = ""
-    page.mrma._fh_detail_dlg._name     = ""
-    page.mrma._fh_detail_dlg._rt_type  = ""
-    page.mrma._fh_detail_dlg._rt_name  = ""
+    page.mrma._fh_detail_state = {
+        "relation": "", "name": "", "rt_type": "", "rt_name": "",
+    }
     append_dialog(page, page.mrma._fh_detail_dlg)
 
 
 def open_detail_for(page: ft.Page, relation: str, display_name: str, entries: list[dict], on_refresh):
     _ensure_detail_dialog(page, on_refresh)
     dlg = page.mrma._fh_detail_dlg
-    dlg._relation = relation
-    dlg._name     = display_name
-    dlg._rt_type  = entries[0].get("related_to_type", "") if entries else ""
-    dlg._rt_name  = entries[0].get("related_to_name", "") if entries else ""
+    page.mrma._fh_detail_state["relation"] = relation
+    page.mrma._fh_detail_state["name"]     = display_name
+    page.mrma._fh_detail_state["rt_type"]  = entries[0].get("related_to_type", "") if entries else ""
+    page.mrma._fh_detail_state["rt_name"]  = entries[0].get("related_to_name", "") if entries else ""
 
     title_text = display_name if display_name else relation
     page.mrma._fh_detail_relation.value = f"{title_text} ({relation})" if display_name else relation
@@ -368,7 +367,7 @@ def _ensure_add_dialog(page: ft.Page, on_refresh):
         on_dismiss=_close,
     )
     append_dialog(page, page.mrma._fh_add_dlg)
-    page.mrma._fh_add_dlg._widgets = (
+    page.mrma._fh_add_widgets = (
         _name_tf, _rel_dd, _shared_dd, _cond_tf,
         _bio_sex_dd, _rt_type_dd, _rt_name_dd, _rt_section, _rt_row, _rt_no_members, _notes_tf,
     )
@@ -378,7 +377,7 @@ def open_add_dialog(page: ft.Page, on_refresh):
     _ensure_add_dialog(page, on_refresh)
     (name_tf, rel_dd, shared_dd, cond_tf,
      bio_sex_dd, rt_type_dd, rt_name_dd, rt_section,
-     rt_row, rt_no_members, notes_tf) = page.mrma._fh_add_dlg._widgets
+     rt_row, rt_no_members, notes_tf) = page.mrma._fh_add_widgets
 
     # Reset fields
     name_tf.value     = ""

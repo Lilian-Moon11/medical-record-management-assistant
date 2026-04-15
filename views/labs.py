@@ -459,8 +459,8 @@ def get_labs_view(page: ft.Page):
     _info_btn = make_info_button(page, "Vitals & Labs", [
         "This tab has two sub-tabs: Vitals (daily measurements like blood pressure or weight) and Clinical Labs (official test results from a lab, clinic, or hospital).",
         "Select a metric or test name from the left sidebar to see its trend chart and history table.",
-        "The trend chart plots numeric values over time. A green dashed line shows the reference range (normal bounds) when available.",
-        "Click a column header in the Historical Test Table to sort results.",
+        "The trend chart plots numeric values over time. Green dashed lines show the reference range (normal bounds) when available.",
+        "Click a column header in the Historical Test Table to sort results. Click the Info icon on any row to see full details including notes and reference ranges.",
     ])
 
     return themed_panel(

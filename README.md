@@ -15,7 +15,6 @@ Issues & Support: https://github.com/Lilian-Moon11/local-patient-advocate/issues
 - Store medical documents (PDFs, records, reports) securely on your computer
 - Organize records by patient profile
 - Automatically extract clinical information like Conditions or Medications from scanned OCR documents using a completely offline, local AI Pipeline.
-- Chat with your documents directly via the dashboard using a Local RAG AI Assistant.
 - Open documents when you need them, without permanently decrypting them
 - Help prepare Release of Information (ROI) paperwork
 - Work totally offline — no internet connection required

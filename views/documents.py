@@ -29,6 +29,7 @@
 # - Document IDs are treated as opaque identifiers; user-facing ordering
 #   is handled via sort/filter logic rather than relying on database IDs
 # -----------------------------------------------------------------------------
+import logging
 import flet as ft
 import os
 import asyncio
@@ -48,6 +49,8 @@ from database import (
 )
 from database.clinical import get_pending_suggestion_count
 from utils.ui_helpers import append_dialog, pt_scale, show_snack, make_info_button
+
+logger = logging.getLogger(__name__)
 
 
 def get_documents_view(page: ft.Page):
@@ -105,7 +108,7 @@ def get_documents_view(page: ft.Page):
                 
             show_snack(page, "Record and file deleted.", "blue")
         except Exception as ex:
-            print("DELETE ERROR:", ex)
+            logger.error("Document delete error: %s", ex)
             show_snack(page, f"Delete failed: {ex}", "red")
 
     if not hasattr(page.mrma, "_delete_dlg") or page.mrma._delete_dlg is None:
@@ -203,7 +206,7 @@ def get_documents_view(page: ft.Page):
         except InvalidToken:
             show_snack(page, "This file appears to be corrupted or was encrypted with a different key.", "red")
         except Exception as ex:
-            print("OPEN ERROR:", ex)
+            logger.error("Document open error: %s", ex)
             show_snack(page, f"Open failed: {ex}", "red")
 
     def open_doc_click(e: ft.ControlEvent):
@@ -401,10 +404,10 @@ def get_documents_view(page: ft.Page):
                                 page.content_area.content = page.mrma._get_view_for_index(idx)
                                 page.content_area.update()
                         except Exception as refresh_ex:
-                            print(f"Auto-refresh failed: {refresh_ex}")
+                            logger.debug("Auto-refresh failed: %s", refresh_ex)
 
                 except Exception as ex:
-                    print(f"Ingestion error: {ex}")
+                    logger.error("Ingestion error: %s", ex)
 
                 # ── Candidate matching for records requests ───────────────────
                 try:
@@ -429,12 +432,12 @@ def get_documents_view(page: ft.Page):
                         except Exception:
                             pass
                 except Exception as match_ex:
-                    print(f"Candidate match error: {match_ex}")
+                    logger.debug("Candidate match error: %s", match_ex)
 
             threading.Thread(target=_ingest, daemon=True).start()
 
         except Exception as ex:
-            print(f"Upload Error: {ex}")
+            logger.error("Upload error: %s", ex)
             show_snack(page, f"Error: {str(ex)}", "red")
 
     # 7. INITIAL LAYOUT BUILD

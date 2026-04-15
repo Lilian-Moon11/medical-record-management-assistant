@@ -1,11 +1,14 @@
 from __future__ import annotations
 import json
+import logging
 import os
 import zipfile
 from datetime import datetime
 
 from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
 from utils.airlock import _fetch_all_as_dicts
+
+logger = logging.getLogger(__name__)
 
 def export_unencrypted_profile(
     conn,
@@ -147,7 +150,7 @@ def export_unencrypted_profile(
                     zip_name = f"documents/{doc['file_name']}"
                     zf.writestr(zip_name, plaintext)
                 except Exception as ex:
-                    print(f"[unencrypted_export] Failed to export doc '{doc.get('file_name', '?')}': {ex}")
+                    logger.warning("Failed to export doc '%s': %s", doc.get('file_name', '?'), ex)
 
         # ── Readable PDF summary (primary artifact) ───────────────────────
         try:
@@ -172,8 +175,8 @@ def export_unencrypted_profile(
                     with open(pdf_path, 'rb') as f:
                         zf.writestr("Medical_Summary.pdf", f.read())
                     try: os.remove(pdf_path)
-                    except: pass
+                    except OSError: pass
         except Exception as e:
-            print(f"Failed to append readable PDF to zip: {e}")
+            logger.error("Failed to append readable PDF to zip: %s", e)
 
     return dest_path

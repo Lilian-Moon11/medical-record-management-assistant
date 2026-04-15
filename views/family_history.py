@@ -68,7 +68,9 @@ def get_family_history_view(page: ft.Page) -> ft.Control:
     s = pt_scale(page, 1)
 
     _info_btn = make_info_button(page, "Family History", [
+        "Add family members and their diagnosed conditions to build a visual genealogy tree and hereditary risk summary.",
         "There is only support here for 1st and 2nd degree relatives since those are what current science agrees are relevant to hereditary risk, but you can add more if you want to. I don't know what will happen, but more power to you.",
+        "Click any node to view details or edit entries for that person.",
         "Your own diagnoses live in the Health Record tab, not here.",
     ])
 

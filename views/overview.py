@@ -19,6 +19,7 @@
 # switch away to another tab to look up information.
 # -----------------------------------------------------------------------------
 
+import logging
 import flet as ft
 from datetime import datetime, timedelta
 from database.patient import update_profile, get_profile
@@ -34,6 +35,8 @@ from utils.ui_helpers import OUTLINE_VARIANT, append_dialog, pt_scale, themed_pa
 from utils.pdf_gen import generate_summary_pdf
 from database.clinical import get_pending_suggestion_count
 from ui.wizards.paperwork_wizard import PaperworkWizard
+
+logger = logging.getLogger(__name__)
 
 
 # ── Status chip helper ────────────────────────────────────────────────────────
@@ -419,7 +422,7 @@ def _build_requests_panel(page: ft.Page, patient_id: int) -> ft.Column:
         try:
             rows = list_requests(page.db_connection, patient_id)
         except Exception as ex:
-            print(f"Requests fetch error: {ex}")
+            logger.debug("Requests fetch error: %s", ex)
 
         if not rows:
             requests_list.controls.append(

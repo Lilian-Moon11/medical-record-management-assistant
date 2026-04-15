@@ -309,6 +309,7 @@ def get_immunizations_view(page: ft.Page):
                     ),
                     make_info_button(page, "Immunizations", [
                         "Thanks for getting immunized. You're doing your part to keep yourself and others safe.",
+                        "Click any sortable column header to reorder the table.",
                     ]),
                 ]),
                 ft.Divider(),
