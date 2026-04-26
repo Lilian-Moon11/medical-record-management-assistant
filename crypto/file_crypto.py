@@ -60,14 +60,23 @@ def _upsert_setting(cur, key: str, value: str) -> None:
 
 def get_or_create_file_master_key(conn, *, dmk_raw: bytes) -> bytes:
     """
-    Returns decrypted FMK.
+    Derives, migrates, or creates the File Master Key (FMK) bound to the current Database Master Key (DMK).
 
-    New model (v2): FMK is wrapped using DMK-derived Fernet key and stored in:
-      - crypto.fmk_wrapped_by_dmk_b64
+    In the v2 architecture, the FMK is never stored in plaintext. It is generated securely via Fernet 
+    and then enveloped (wrapped) using a secondary Fernet key derived directly from the supplied `dmk_raw`.
+    When the user rotates their password, the DMK changes, and this function cleanly rewraps the FMK 
+    in the database to ensure persistent payload decryption.
 
-    Migration supported from old model (v1):
-      - crypto.fmk_wrapped_b64 + crypto.fmk_salt_b64 + crypto.kdf_iters
-      These will be migrated ONCE if present and DMK is available.
+    Args:
+        conn (sqlite3.Connection): Active database connection.
+        dmk_raw (bytes): The 32-byte Database Master Key derived from the user's password.
+
+    Returns:
+        bytes: The decrypted FMK ready for active file operations during this session.
+        
+    Raises:
+        ValueError: If connection or DMK bytes are completely missing.
+        RuntimeError: If data corruption is detected or legacy (v1) key migration logic fails.
     """
     if conn is None:
         raise ValueError("DB connection required.")
@@ -116,7 +125,27 @@ def get_or_create_file_master_key(conn, *, dmk_raw: bytes) -> bytes:
     return fmk
 
 def encrypt_bytes(fmk: bytes, plaintext: bytes) -> bytes:
+    """
+    Encrypt a payload using the File Master Key (FMK).
+
+    Args:
+        fmk (bytes): The decrypted File Master Key (Fernet format).
+        plaintext (bytes): The raw bytes to encrypt.
+
+    Returns:
+        bytes: The Fernet-encrypted ciphertext payload, safe to write to disk.
+    """
     return Fernet(fmk).encrypt(plaintext)
 
 def decrypt_bytes(fmk: bytes, ciphertext: bytes) -> bytes:
+    """
+    Decrypt a payload using the File Master Key (FMK).
+
+    Args:
+        fmk (bytes): The decrypted File Master Key (Fernet format).
+        ciphertext (bytes): The encrypted bytes read from disk.
+
+    Returns:
+        bytes: The decrypted plaintext payload ready for application memory.
+    """
     return Fernet(fmk).decrypt(ciphertext)
