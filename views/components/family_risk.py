@@ -7,12 +7,19 @@
 
 import flet as ft
 from utils.ui_helpers import pt_scale
-from views.components.family_helpers import _degree_label, _SEX_ICON, _SEX_COLOR
+from views.components.family_helpers import _degree_label
 
 # ---------------------------------------------------------------------------
-# Risk summary
+# Family history summary - grouped by degree (1st / 2nd / extended)
 # ---------------------------------------------------------------------------
-def build_risk_summary(page: ft.Page, items: list[dict]) -> ft.Control:
+def build_risk_summary(page: ft.Page, items: list[dict],
+                       on_node_click=None) -> ft.Control:
+    """
+    Build the degree-based family history summary.
+
+    on_node_click(relation, display_name, entries) is called when the user
+    clicks a condition row to edit that family member.
+    """
     s = pt_scale(page, 1)
 
     first: list[dict]    = []
@@ -33,25 +40,43 @@ def build_risk_summary(page: ft.Page, items: list[dict]) -> ft.Control:
         else:
             extended.append(entry)
 
+    def _get_person_entries(rel: str, name: str) -> list[dict]:
+        """Collect all entries for a specific person across all items."""
+        return [it for it in items
+                if (it.get("relation") or "").strip() == rel
+                and (it.get("name") or "").strip() == name]
+
     def _cond_row(e: dict) -> ft.Control:
-        rel   = e.get("relation", "")
-        name  = (e.get("name") or "").strip()
-        cond  = e.get("condition", "")
-        bs    = (e.get("biological_sex") or "").strip()
-        glyph = _SEX_ICON.get(bs, "") if bs not in ("Unknown", "Prefer not to say", "") else ""
-        g_col = _SEX_COLOR.get(bs, ft.Colors.GREY_400)
-        who   = name if name else rel
+        rel  = e.get("relation", "")
+        name = (e.get("name") or "").strip()
+        cond = e.get("condition", "")
+
+        # Format: "(nickname, relationship)" or "(relationship)" if no nickname
+        if name:
+            who_label = f"({name}, {rel})"
+        else:
+            who_label = f"({rel})"
 
         row_c: list[ft.Control] = [
-            ft.Icon(ft.Icons.WARNING_AMBER, size=13 * s, color=ft.Colors.ORANGE_400),
+            ft.Icon(ft.Icons.CIRCLE, size=8 * s, color=ft.Colors.TEAL_400),
             ft.Text(cond, size=12 * s, expand=True),
+            ft.Text(who_label, size=11 * s,
+                    color=ft.Colors.GREY_500, italic=True),
         ]
-        if glyph:
-            row_c.append(ft.Text(glyph, size=12 * s, color=g_col,
-                                  tooltip=f"Biological sex: {bs}"))
-        row_c.append(ft.Text(f"({who})", size=11 * s,
-                              color=ft.Colors.GREY_500, italic=True))
-        return ft.Row(row_c, spacing=4)
+
+        if on_node_click:
+            row_c.append(
+                ft.IconButton(
+                    icon=ft.Icons.EDIT,
+                    icon_size=14 * s,
+                    tooltip="Edit family member",
+                    icon_color=ft.Colors.GREY_500,
+                    on_click=lambda e, r=rel, n=name: on_node_click(
+                        r, n, _get_person_entries(r, n)),
+                )
+            )
+
+        return ft.Row(row_c, spacing=6)
 
     def _make_col(title: str, subtitle: str, entries: list[dict]) -> ft.Control:
         rows: list[ft.Control] = [
@@ -72,24 +97,6 @@ def build_risk_summary(page: ft.Page, items: list[dict]) -> ft.Control:
                                 color=ft.Colors.GREY_400, size=12 * s))
         return ft.Column(rows, spacing=4, expand=True)
 
-    disclaimer = ft.Container(
-        bgcolor=ft.Colors.BLUE_50,
-        border_radius=8 * s,
-        border=ft.border.all(1 * s, ft.Colors.BLUE_200),
-        padding=ft.padding.symmetric(horizontal=12 * s, vertical=8 * s),
-        content=ft.Row([
-            ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE_600, size=16 * s),
-            ft.Column([
-                ft.Text("These conditions appear in your family history. "
-                        "They are NOT your personal diagnoses.",
-                        size=12 * s, color=ft.Colors.BLUE_700, italic=True),
-                ft.Text("♀ ♂ ⚧  indicators show biological sex where relevant "
-                        "to sex-linked conditions.",
-                        size=11 * s, color=ft.Colors.BLUE_500),
-            ], spacing=2, expand=True),
-        ], spacing=8),
-    )
-
     degree_row = ft.Row(
         [
             _make_col("1st Degree Relatives",
@@ -103,7 +110,7 @@ def build_risk_summary(page: ft.Page, items: list[dict]) -> ft.Control:
         spacing=16 * s,
     )
 
-    parts: list[ft.Control] = [disclaimer, ft.Container(height=8 * s), degree_row]
+    parts: list[ft.Control] = [degree_row]
 
     if extended:
         parts.append(ft.Divider())
@@ -116,4 +123,4 @@ def build_risk_summary(page: ft.Page, items: list[dict]) -> ft.Control:
             seen_ext.add(key)
             parts.append(_cond_row(e))
 
-    return ft.Column(parts, spacing=8 * s)
+    return ft.Column(parts, spacing=4 * s)

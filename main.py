@@ -145,37 +145,8 @@ def main(page: ft.Page):
         apply_settings_callback()
         navigation.show_main_dashboard(page, get_view_for_index=get_view_for_index)
 
-        # Check backup reminder
-        try:
-            import time
-            from database import set_setting, get_setting
-            from utils.ui_helpers import append_dialog
-            last_prompt_str = get_setting(page.db_connection, "ui.last_backup_prompt_unix", "0")
-            if time.time() - float(last_prompt_str) > 604800:
-                set_setting(page.db_connection, "ui.last_backup_prompt_unix", str(time.time()))
-                def _close_dlg(e):
-                    dlg.open = False
-                    page.update()
-                
-                def _go_settings(e):
-                    _close_dlg(e)
-                    page.nav_rail.selected_index = 7
-                    page.content_area.content = get_view_for_index(7)
-                    page.update()
 
-                dlg = ft.AlertDialog(
-                    title=ft.Text("Backup Reminder"),
-                    content=ft.Text("It has been over a week since your last vault backup. Would you like to export your vault to a secure ZIP file now?"),
-                    actions=[
-                        ft.TextButton("Dismiss", on_click=_close_dlg),
-                        ft.FilledButton("Go to Settings", on_click=_go_settings),
-                    ],
-                )
-                append_dialog(page, dlg)
-                dlg.open = True
-                page.update()
-        except Exception:
-            pass
+
 
     def on_show_recovery(recovery_key: str):
         dialogs.show_recovery_ceremony(page, recovery_key, s=pt_scale, show_snack=show_snack)
