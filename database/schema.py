@@ -18,6 +18,16 @@ from .patient import ensure_field_definition
 
 
 def _ensure_schema(conn):
+    """
+    Initialize and migrate the SQLite database schema.
+
+    Executes idempotent DDL statements against the SQLCipher connection 
+    to construct table architectures (Demographics, AI extraction logs, etc.).
+    Includes logic to silently handle additive schema upgrades across versions.
+
+    Args:
+        conn (sqlite3.Connection): An active, decrypted connection to the vault.
+    """
     cur = conn.cursor()
 
     # ── Core tables ──────────────────────────────────────────────────────────

@@ -133,6 +133,17 @@ def open_vault_with_recovery(recovery_key_b64: str):
 
 
 def get_setting(conn, key: str, default=None):
+    """
+    Retrieve an application configuration value securely from the encrypted SQLite vault.
+
+    Args:
+        conn (sqlite3.Connection): Active database connection.
+        key (str): The configuration key identifier.
+        default (Any, optional): The default value to return if the key is not found.
+
+    Returns:
+        Any: The stored configuration value or the provided default.
+    """
     cur = conn.cursor()
     cur.execute("SELECT value FROM app_settings WHERE key=?", (key,))
     row = cur.fetchone()
@@ -140,6 +151,14 @@ def get_setting(conn, key: str, default=None):
 
 
 def set_setting(conn, key: str, value) -> None:
+    """
+    Securely persist an application configuration value within the encrypted SQLite vault.
+
+    Args:
+        conn (sqlite3.Connection): Active database connection.
+        key (str): The configuration key identifier.
+        value (Any): The value to store. If None, the setting is formally deleted from the vault.
+    """
     cur = conn.cursor()
     if value is None:
         cur.execute("DELETE FROM app_settings WHERE key=?", (key,))

@@ -7,7 +7,7 @@ Your data stays on your computer, encrypted, and under your control.
 Status: MVP (In Development)
 License: GNU AGPLv3
 Created by: Lilian-Moon11
-Issues & Support: https://github.com/Lilian-Moon11/local-patient-advocate/issues
+Issues & Support: https://github.com/Lilian-Moon11/medical-record-management-assistant/issues
 
 
 ## What This App Does
@@ -17,6 +17,7 @@ Issues & Support: https://github.com/Lilian-Moon11/local-patient-advocate/issues
 - Automatically extract clinical information like Conditions or Medications from scanned OCR documents using a completely offline, local AI Pipeline.
 - Open documents when you need them, without permanently decrypting them
 - Help prepare Release of Information (ROI) paperwork
+- Guarantee data portability via an Airlock Import/Export engine to prevent vendor lock-in
 - Work totally offline — no internet connection required
 
 This app is designed for people who care deeply about privacy and don’t want their medical information uploaded to third-party services.
@@ -84,8 +85,8 @@ A computer with Python 3.12 (Strictly required for local AI / OCR pipelines)
 Windows, macOS, or Linux
 
 ### Step 1: Download the App
-git clone https://github.com/Lilian-Moon11/local-patient-advocate.git
-cd local-patient-advocate
+git clone https://github.com/Lilian-Moon11/medical-record-management-assistant.git
+cd medical-record-management-assistant
 
 ### Step 2: (Recommended) Create a Virtual Environment
 To prevent dependency errors, explicitly use Python 3.12 when creating your environment.
@@ -119,8 +120,48 @@ If you’ve used the app before, enter your existing password
 
 Follow the on-screen instructions carefully, especially when saving your recovery key.
 
+## Product Roadmap & Future Iterations
+
+I successfully shipped the core MVP by aggressively scoping the initial feature set. The backlog for future iterations is prioritized across three distinct horizons:
+
+### Short-Term (Distribution & Polish)
+- **Executable Packages**: Finalizing CI/CD pipelines to build standalone, portable `.exe` and `.app` bundles to abstract command-line usage away from non-technical users.
+- **Accessibility Audits**: Comprehensive screen reader testing (NVDA on Windows, VoiceOver on Mac) across complex data grids.
+
+### Medium-Term (Interoperability)
+- **FHIR Standards Alignment**: Upgrading the internal schemas to fully map to standard FHIR R4 structures for deeper interoperability with major health networks.
+- **Project Discoverability**: Building a companion landing page to detail the cryptographic architecture and act as a user-facing knowledge base.
+
+### Long-Term (Ecosystem Expansion)
+- **Zero-Knowledge Cloud Sync**: Investigating End-to-End Encrypted (E2EE) cloud architectures to allow safe, user-controlled multi-device synchronization without breaking the zero-trust threat model.
+
+## Out of Scope (Intentional Scope Management)
+
+To ensure this MVP didn't succumb to feature-creep and remained tightly scoped on its primary value proposition (local-first data extraction and ROI paperwork prep), the following features were explicitly rejected or placed strictly out of scope:
+
+- **Pinning UI Panels to Overview Tab**: *Decided Against.* Rather than building complex state-management capable of cloning visual UI widgets cross-screen, I instead provided granular PDF Selection tools. This fulfills the core user need (viewing arbitrary combinations of data together) without irreparably cluttering the digital workspace.
+- **Hybrid Web Access / Explaining "Portions"**: *Rejected.* I received proposals to allow "partial" web access for specific non-sensitive functions. I rejected this to maintain an absolute `zero-trust`, 100% offline security guarantee. If an open-source contributor requires web metrics, it must remain an explicitly distinct fork.
+- **Superbill / Insurance Submission Tracking**: *Rejected.* Adding financial workflows muddies the goal of the application. It belongs strictly in an entirely different financial-management project architecture.
+- **AI Medical Coding (ICD/CPT)**: *Put on hold.* While the AI pipeline is capable, patient advocates rarely require deriving their own diagnostic/procedural codes mechanically, meaning the legal liability and complexity significantly outweighed any concrete user story.
+- **PDF Form Modifications/Annotations**: *Decided Against.* I deliberately did not recreate standard Adobe Acrobat behaviors (drawing text on flat pages) to keep the repository lightweight and solely focused on programmatic workflow filling.
+- **Non-AI "Lite" Editions**: *Mitigated differently.* To handle general AI apprehension from older tech users, I instead prioritized radical transparency about the Small Language Model (SLM) executing absolutely independently of external APIs.
+
+## Design Decisions & Evolution (The Pivots)
+
+1. **UX Pivot: Clinical Universality vs. Novelty.** I originally designed an abstracted "Body-System" map for capturing Family history. User testing demonstrated it was highly confusing. I scrapped the complex architecture completely in favor of flat, standard clinical checkbox forms mapping 1:1 with traditional doctor intake paperwork.
+2. **Security Pivot: The Keybag Envelope (Crypto v2).** The MVP originally tied database encryption 1:1 with the user-provided password. This proved fatal for UX: if a user compromised their password, rotating it meant I'd have to aggressively load and re-encrypt gigabytes of appended PDF binaries. My pivot implemented a staggered Master Key envelope, allowing instantaneous password and recovery key swaps.
+3. **AI Architecture Pivot: Generative vs. Extractive.** I initially experimented with conversational "RAG" (Retrieval-Augmented Generation) chatbots. I quickly realized conversational AI in medical tooling introduces unacceptable hallucination risks for patient advocates. I pivoted hard: I ripped out the chatbot UI and rebuilt the AI pipeline strictly as a background data-extraction agent, mapping clinical data into fixed forms under strict human-in-the-loop supervision.
+4. **International Data Architecture.** During my schema mapping for Demographics, I explicitly omitted static dependencies on US Social Security Numbers. However, I preserved generalized abstract Insurance blocks, acknowledging the existence of universally managed care networks internationally.
+
 ## Technology (For Transparency)
 
+**The Local AI Component**
+To guarantee absolute privacy while modernizing the user experience, this application leverages a highly specialized, localized AI framework. 
+- **The Engine**: Execute completely offline using `llama-cpp-python`, allowing the CPU-efficient processing of GGUF quantized models without requiring network connectivity.
+- **The Process**: By prioritizing an Extractive agent over a Generative chatbot, the model strictly isolates clinical data points (dates, dosages, conditions) from unstructured PDFs and maps them securely to local schemas.
+- **Opt-In Architecture**: To keep the initial footprint lightweight, the ~2.5 GB model is not bundled by default. It is dynamically fetched on the user's explicit first request, meaning skeptical users can comfortably utilize the entire repository without ever invoking the AI module.
+
+**Core Stack**
 User Interface: Flet (accessible, native desktop UI)
 
 Database: SQLite encrypted with SQLCipher (AES-256)

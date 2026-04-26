@@ -4,7 +4,7 @@
 
 | Requirement | Notes |
 |---|---|
-| Python 3.11+ | 3.13 tested |
+| Python 3.12 | Strictly required for ONNX/AI compatibility |
 | Windows Developer Mode | Required for SQLCipher wheel symlinks |
 | Git | For cloning the repo |
 
