@@ -202,7 +202,7 @@ def get_documents_view(page: ft.Page):
 
             open_file_cross_platform(tmp_path)
 
-            show_snack(page, "Opened a temporary decrypted copy (will be cleaned up later).", "orange")
+            show_snack(page, "Opened a temporary decrypted copy.", "orange")
         except InvalidToken:
             show_snack(page, "This file appears to be corrupted or was encrypted with a different key.", "red")
         except Exception as ex:
@@ -443,19 +443,7 @@ def get_documents_view(page: ft.Page):
     # 7. INITIAL LAYOUT BUILD
     refresh_table(page.mrma._doc_search_term, update_ui=False)
 
-    # --- AI Inbox badge ---
-    pending_count = get_pending_suggestion_count(page.db_connection, patient_id)
-    review_btn = ft.Container()
-    if pending_count > 0:
-        from ui.ai_review_dialog import show_ai_review_dialog
-        def _open_review(_):
-            show_ai_review_dialog(page, patient_id, on_close=lambda: refresh_table(search_field.value, update_ui=True))
-        review_btn = ft.FilledButton(
-            f"Review Suggestions ({pending_count})",
-            icon=ft.Icons.NEW_RELEASES,
-            style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_600, color=ft.Colors.WHITE),
-            on_click=_open_review,
-        )
+
 
     _info_btn = make_info_button(page, "Medical Records", [
         "Upload any medical document (PDF, image, etc.) using the \"Upload Document\" button.",
@@ -471,10 +459,12 @@ def get_documents_view(page: ft.Page):
             [
                 ft.Row(
                     [
-                        ft.Text("Medical Records", size=pt_scale(page, 24), weight="bold"),
+                        ft.Semantics(
+                            header=True,
+                            heading_level=1,
+                            content=ft.Text("Medical Records", size=pt_scale(page, 24), weight="bold"),
+                        ),
                         ft.Container(expand=True),
-                        review_btn,
-                        ft.Container(width=pt_scale(page, 10)) if pending_count > 0 else ft.Container(),
                         ft.FilledButton(
                             "Upload Document",
                             icon=ft.Icons.UPLOAD_FILE,

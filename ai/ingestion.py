@@ -328,6 +328,8 @@ def run_ingestion(
 
         file_name = doc.get("file_name", "unknown")
         pages = _extract_text(plaintext, file_name)
+        print(f"[AI-DIAG] Doc {doc['id']}: {len(pages)} pages extracted")
+
 
         full_text_parts = []
         doc_quality_flags = set()
@@ -340,6 +342,7 @@ def run_ingestion(
 
         if not (stop_event and stop_event.is_set()):
             full_text = "\n".join(full_text_parts)
+            print(f"[AI-DIAG] Doc {doc['id']}: total text length = {len(full_text)} chars, quality flags = {doc_quality_flags}")
 
             # Persist extracted text so check_upload_for_matches can use it
             try:
@@ -386,6 +389,7 @@ def run_ingestion(
             if _quality_warnings:
                 _insert_suggestions(conn, patient_id, doc["id"], _quality_warnings)
 
+            print(f"[AI-DIAG] Doc {doc['id']}: text has content = {bool(full_text.strip())}")
             if full_text.strip():
                 # Extract Document Metadata (Visit Date & Specialty) using AI
                 try:
@@ -425,9 +429,21 @@ Document:
                         full_text, 
                         file_name
                     )
+                    print(f"[AI-DIAG] Doc {doc['id']}: LLM returned {len(suggestions)} suggestions")
+                    for s in suggestions:
+                        print(f"[AI-DIAG]   -> field_key={s['field_key']}, confidence={s.get('confidence')}, conflict={s.get('conflict')}")
                     if suggestions:
                         _insert_suggestions(conn, patient_id, doc["id"], suggestions)
+                        # Verify insertion
+                        inbox_count = conn.execute(
+                            "SELECT COUNT(*) FROM ai_extraction_inbox WHERE patient_id=? AND status='pending'",
+                            (patient_id,)
+                        ).fetchone()[0]
+                        print(f"[AI-DIAG] Total pending suggestions in inbox: {inbox_count}")
+                    else:
+                        print(f"[AI-DIAG] Doc {doc['id']}: No suggestions produced by LLM")
                 except Exception as ex:
+                    print(f"[AI-DIAG] Doc {doc['id']}: EXTRACTION FAILED: {ex}")
                     logger.error("Extraction failed for doc %d: %s", doc["id"], ex)
 
         if not (stop_event and stop_event.is_set()):

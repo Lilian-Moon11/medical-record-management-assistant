@@ -107,8 +107,54 @@ def main(page: ft.Page):
 
     def _update_activity(e=None):
         page.mrma._last_activity = time.time()
-        
-    page.on_keyboard_event = _update_activity
+
+    def _on_keyboard(e: ft.KeyboardEvent):
+        page.mrma._last_activity = time.time()
+
+        rail = getattr(page, "nav_rail", None)
+
+        # Ctrl+1..8 (or Cmd+1..8)  →  switch tab directly
+        if (e.ctrl or e.meta) and not e.shift and not e.alt:
+            if rail is not None and e.key in "12345678":
+                idx = int(e.key) - 1
+                if idx < len(rail.destinations):
+                    rail.selected_index = idx
+                    rail.update()
+                    # Also update content area
+                    gv = getattr(page.mrma, "_get_view_for_index", None)
+                    ca = getattr(page, "content_area", None)
+                    if gv and ca:
+                        ca.content = gv(idx)
+                        ca.update()
+            return
+
+        # Arrow keys → cycle tabs (APG Tabs pattern)
+        # Home/End → first/last tab
+        if rail is not None and not e.ctrl and not e.alt:
+            move = getattr(rail, "move_tab", None)
+            if e.key == "Arrow Right" and move:
+                move(1)
+            elif e.key == "Arrow Left" and move:
+                move(-1)
+            elif e.key == "Home":
+                rail.selected_index = 0
+                rail.update()
+                gv = getattr(page.mrma, "_get_view_for_index", None)
+                ca = getattr(page, "content_area", None)
+                if gv and ca:
+                    ca.content = gv(0)
+                    ca.update()
+            elif e.key == "End":
+                last = len(rail.destinations) - 1
+                rail.selected_index = last
+                rail.update()
+                gv = getattr(page.mrma, "_get_view_for_index", None)
+                ca = getattr(page, "content_area", None)
+                if gv and ca:
+                    ca.content = gv(last)
+                    ca.update()
+
+    page.on_keyboard_event = _on_keyboard
 
     page.root = ft.Container(expand=True, on_hover=_update_activity)
     page.add(page.root)
@@ -126,19 +172,32 @@ def main(page: ft.Page):
     # --- dialogs (register once; safe to call multiple times) ---
     dialogs.ensure_dialogs_registered(page, s=pt_scale, show_snack=show_snack)
 
+    # --- build login view (extracted so logout can rebuild fresh) ---
+    def _build_fresh_login():
+        return login.build_login_view(
+            page,
+            on_unlocked=on_unlocked,
+            on_show_recovery=on_show_recovery,
+            on_open_forgot_password=on_open_forgot_password,
+            show_snack=show_snack,
+        )
+
     # --- logout (returns to login view) ---
     def logout():
-        # Reset login UI controls BEFORE clear_session wipes page.mrma
-        try:
-            page.mrma.login_password_field.value = ""
-            page.mrma.login_error_text.visible = False
-        except Exception:
-            pass
-
         app_state.clear_session(page)
 
-        page.root.content = login_view
+        # Rebuild login view fresh — prevents dead TextFields after wipe
+        # and re-evaluates vault_exists() for correct Create/Unlock state
+        fresh_login = _build_fresh_login()
+
+        # Re-expose logout on the fresh page.mrma
+        page.mrma._logout = logout
+
+        page.root.content = fresh_login
         page.update()
+
+    # Expose logout so settings/wipe can redirect to login instead of killing the app
+    page.mrma._logout = logout
 
     # --- after unlock ---
     def on_unlocked():
@@ -176,14 +235,8 @@ def main(page: ft.Page):
 
     page.run_task(session_watchdog)
 
-    # --- login view ---
-    login_view = login.build_login_view(
-        page,
-        on_unlocked=on_unlocked,
-        on_show_recovery=on_show_recovery,
-        on_open_forgot_password=on_open_forgot_password,
-        show_snack=show_snack,
-    )
+    # --- initial login view ---
+    login_view = _build_fresh_login()
 
     # --- start at login ---
     page.root.content = login_view

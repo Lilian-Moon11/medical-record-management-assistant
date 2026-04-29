@@ -1,0 +1,94 @@
+Title	URL	Assignees	Status	Linked pull requests	Sub-issues progress
+In Linux, the FilePicker control depends on Zenity when running Flet as an app.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/47		Notes		
+FilePicker Issue	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/48		Notes		
+Paid version that just has a low quality thank you written or thank you button?	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/54		Notes		
+show_snack colors	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/58		Notes		
+Tab switches from the bar of tabs x1 to content to next tab. This is likely going to be a screen reader issues, also maybe awkward	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/69		Notes		
+Didn't add SSN as a default, since I want it to be international. Insurance section is staying because lots of countries have insurance that also have universal healthcare. Open to other set up later	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/72		Notes		
+Decided not to run a GPT Assistant, not a lot of value add for the bulk. Summary page is doing the functions it would perform. Perhaps uses with more processing power but not currently accessible to average user.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/86		Notes		
+Semantic HTML Audit	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/23		Backlog		
+Keyboard Navigation Test	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/24		Backlog		
+Figure out how to let people download and run the app, maybe get it added to windows	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/41		Backlog		
+Verify that the login screen and menu are navigable via NVDA (Windows) and VoiceOver (Mac).	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/43		Backlog		
+Add contact for non technical users to reach out to? Do I want to take bug reports?	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/57		Backlog		
+Accessibility in the Intake UI	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/36		Backlog		
+Write "How to Print/Fax" Guide	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/27		Backlog		
+Figure out how to get it to people	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/66		Backlog		
+Workshop wizard language to be more personable.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/92		Backlog		
+Make explanation/walkthrough video with time markers	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/67		Backlog		
+Launch	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/73		Backlog		
+Make UAT doc	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/87		Backlog		
+Zero trust handshake with medical offices and research establishments	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/39		Backlog		
+Make a website and add it to the app.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/96		Current Phase		
+Add contact email. Decide if that is my main.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/98		Current Phase		
+Support for multiple users on one device	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/38		Done		
+Create Front End Non-technical User Interface	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/1		Done		
+Deactivate next in the paperwork_wizard.py until a recipient has been selected	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/81		Done		
+Records Requested Checklist	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/4		Done		
+Tips that live in the question marks can rotate during each time waiting for form filling.. like video game loading screens	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/91		Done		
+Sort documents	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/50		Done		
+Customizable summary	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/79		Done		
+Make AI source links clickable	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/89		Done		
+Querying medical records	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/33		Done		
+Make sure AI suggestions when accepted make sense and add to the right places	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/85		Done		
+PRAGMA key = '{input_password}'; can break if the password contains a '.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/45		Done		
+Button on documents delete confirmation screen fix	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/53		Done		
+Solving the PyInstaller Performance Bottleneck	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/37		Done		
+AI to UI translation	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/32		Done		
+Make it usable for low tech users.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/40		Done		
+Small Language Model (SLM)	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/31		Done		
+AI for reading documents	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/3		Done		
+SLM Needs	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/71		Done		
+PDF Flattening	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/19		Done		
+Add setting in patient info to turn on and off ability to see source of information and updated date.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/75		Done		
+Graphical representation of lab numbers change over time	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/70		Done		
+Build Alpha Installer	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/28		Done		
+Controlled Excel export/import with encryption	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/83		Done		
+Lab UI feels wonky. Works, need to figure out what feels off or really explain how to use it. Doesn't feel intuitive	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/65		Done		
+Controlled Import/Export Workflow	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/29		Done		
+PDF Filler	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/35		Done		
+Wizard" Flow	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/26		Done		
+Figure out how to handle name changes	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/74		Done		
+Source Universal HIPAA Template	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/15		Done		
+Image Injection	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/18		Done		
+Signature Pad:	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/17		Done		
+Generate Summary Page	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/22		Done		
+Establish Data Types (FHIR-lite):	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/10		Done		
+Map Data to PDF	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/16		Done		
+History Entry UI	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/21		Done		
+Medical History Tables	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/20		Done		
+Make a list of everything tried including supplements and duration, surgery. List by condition	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/44		Done		
+Create Backend Patient Info Storage SQLite	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/2		Done		
+Password Recovery	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/51		Done		
+Secure File Storage Strategy	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/30		Done		
+Create Patient Profile Table	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/11		Done		
+Create Provider Directory Table:	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/12		Done		
+"Doctor Address Book" UI	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/14		Done		
+"My Profile" Form	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/13		Done		
+Set up base repository	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/9		Done		
+Lab display	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/62		Done		
+Password Recovery	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/56		Done		
+immunizations and family medical history and social history	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/95		Done		
+fix show_snack to say that recovery key and password were updated	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/60		Done		
+High Contrast Theme	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/25		Done		
+Make sure HR, BP, O2, Weight are tracked (maybe labs) (biometrics)	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/94		Done		
+Password Recovery V2 — Advanced Recovery & Portability (Offline-First)	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/55		Done		
+Handling for field character limits	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/82		Done		
+Maybe find a way to sort surgery, medications, things tried by condition?	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/77		Done		
+AI to dynamically fill forms	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/88		Done		
+Filename collisions and silent overwrites	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/49		Done		
+Secure file storage (Fernet) for raw PDFs	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/46		Done		
+Info button in a corner to explain what the page does, hints, how to navigate	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/84		Done		
+Document delete confirmation box doesn't automatically go away for the last document deleted.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/52		Done		
+Made sure that recovery keys aren't rotated before the user is ready to. Otherwise risk of loss	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/61		Done		
+Incorrect password snack printed to screen	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/68		Done		
+Code Review	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/97		Done		
+AI Context Consideration to Minimize Hallucinations	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/34		Done		
+Make sure all files have this at the top	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/90		Done		
+Ability to pin panels from other tabs to overview.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/76		Rejected		
+If some web access is allowed, make clear list of which features wont work if not connected to the internet.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/5		Rejected		
+Maybe put out version without AI? DEFINITLY explain SLM	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/64		Rejected		
+Help with superbill submission?	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/8		Rejected		
+AI pulls out ICD codes?	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/6		Rejected		
+AI pulls out CPT codes?	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/7		Rejected		
+Chose not to add ability to add new text to flat forms since it is doable outside of app and adds a lot of bulk.	https://github.com/Lilian-Moon11/medical-record-management-assistant/issues/93		Rejected		

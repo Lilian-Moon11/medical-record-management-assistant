@@ -40,27 +40,35 @@ logger = logging.getLogger(__name__)
 
 
 # ── Status chip helper ────────────────────────────────────────────────────────
-_STATUS_COLORS = {
-    "pending":   ft.Colors.BLUE_GREY_400,
-    "candidate": ft.Colors.ORANGE_600,
-    "complete":  ft.Colors.GREEN_600,
-}
-_STATUS_LABELS = {
-    "pending":   "Pending",
-    "candidate": "Match Found",
-    "complete":  "Complete",
+# WCAG 1.4.1: Icon + text ensures status is not conveyed by color alone.
+# WCAG 1.4.3: Background colors chosen for ≥4.5:1 contrast with white text.
+_STATUS_META = {
+    "pending":   (ft.Colors.BLUE_GREY_700,  ft.Icons.HOURGLASS_EMPTY, "Pending"),
+    "candidate": (ft.Colors.ORANGE_800,     ft.Icons.SEARCH,          "Match Found"),
+    "complete":  (ft.Colors.GREEN_800,      ft.Icons.CHECK_CIRCLE,    "Complete"),
 }
 
 
 def _status_chip(page: ft.Page, status: str) -> ft.Container:
-    color = _STATUS_COLORS.get(status, ft.Colors.GREY)
-    label = _STATUS_LABELS.get(status, status.title())
-    return ft.Container(
-        content=ft.Text(label, size=pt_scale(page, 11), color=ft.Colors.WHITE, weight="bold"),
+    color, icon, label = _STATUS_META.get(
+        status, (ft.Colors.GREY, ft.Icons.HELP_OUTLINE, status.title())
+    )
+    chip = ft.Container(
+        content=ft.Row(
+            [
+                ft.Icon(icon, size=pt_scale(page, 12), color=ft.Colors.WHITE),
+                ft.Text(label, size=pt_scale(page, 11), color=ft.Colors.WHITE, weight="bold"),
+            ],
+            spacing=4,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
         bgcolor=color,
         border_radius=pt_scale(page, 10),
         padding=ft.padding.symmetric(horizontal=pt_scale(page, 8), vertical=pt_scale(page, 2)),
     )
+    return ft.Semantics(label=f"Status: {label}", content=chip)
+
 
 
 # ── Inline date editor ────────────────────────────────────────────────────────
@@ -605,12 +613,13 @@ def get_overview_view(page: ft.Page):
     def _open_review(_):
         show_ai_review_dialog(page, patient_id, on_close=_refresh_review_btn)
 
+    initial_count = _count_pending()
     review_btn = ft.FilledButton(
-        "Review Suggestions",
+        f"Review Suggestions ({initial_count})" if initial_count > 0 else "Review Suggestions",
         icon=ft.Icons.NEW_RELEASES,
         style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_600, color=ft.Colors.WHITE),
         on_click=_open_review,
-        visible=False,
+        visible=initial_count > 0,
     )
     page.mrma._overview_review_btn = review_btn
 
@@ -628,6 +637,7 @@ def get_overview_view(page: ft.Page):
 
     _info_btn = make_info_button(page, "Overview", [
         "You will find question marks located in the top right of each tab (like the one that you clicked to get here) that will give you some information/suggestions/appreciation as you navigate.",
+        "Keyboard Navigation: Press Ctrl+1 through Ctrl+8 (or Cmd+1 through Cmd+8 on Mac) to quickly jump to any tab in the application. You can also use the Left and Right arrow keys to switch tabs when the navigation bar is focused.",
         "Inspiration for using the note space: a place to keep track of action items, things to remember to address at your next appointment, self affirmations. These notes can optionally be included when generating a summary PDF.",
         "The Records Requests panel tracks your ROI (Release of Information) follow-ups. A task is created automatically when you complete an ROI form. Click the due date to edit it inline.",
         "The orange \"Review Suggestions\" button appears here when new data has been extracted from a document you uploaded. Click it to accept or dismiss each suggestion.",

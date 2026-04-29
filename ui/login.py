@@ -53,8 +53,17 @@ def build_login_view(
     on_open_forgot_password,   # callback: open forgot dialog
     show_snack,                # function
 ):
-    password_field = ft.TextField(label="Database Password", password=True)
-    confirm_field = ft.TextField(label="Confirm Password", password=True, visible=False)
+    password_field = ft.TextField(
+        label="Database Password",
+        password=True,
+        hint_text="Enter your vault password",
+    )
+    confirm_field = ft.TextField(
+        label="Confirm Password",
+        password=True,
+        visible=False,
+        hint_text="Re-enter your password to confirm",
+    )
     error_text = ft.Text(color="red", visible=False)
 
     # ── Rate-limiting state ──────────────────────────────────────────────
@@ -555,11 +564,15 @@ def build_login_view(
             ),
             ft.Container(expand=True),  # top spacer
             ft.Icon(ft.Icons.SECURITY, size=64, color="blue"),
-            ft.Text(heading_text, size=30),
+            ft.Semantics(
+                header=True,
+                heading_level=1,
+                content=ft.Text(heading_text, size=30),
+            ),
             password_field,
             confirm_field,
             action_button,
-            error_text,
+            ft.Semantics(live_region=True, content=error_text),
             ft.TextButton("Forgot password?", on_click=lambda e: on_open_forgot_password()),
             ft.Container(expand=True),  # bottom spacer pushes upload to bottom
             ft.TextButton(
@@ -582,5 +595,6 @@ def build_login_view(
     # established page.mrma state container (not fragile _ attrs).
     page.mrma.login_password_field = password_field
     page.mrma.login_error_text = error_text
+    page.mrma.login_import_status = import_status
 
     return login_view

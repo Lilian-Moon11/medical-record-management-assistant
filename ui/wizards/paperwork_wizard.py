@@ -189,7 +189,11 @@ class PaperworkWizard:
 
         if self.step == 1:
             self.content_area.controls.append(
-                ft.Text("Step 1: Select Form Type", weight="bold", size=header_size)
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Step 1: Select Form Type", weight="bold", size=header_size)
+                )
             )
 
             self.form_radio = ft.RadioGroup(
@@ -226,7 +230,11 @@ class PaperworkWizard:
         elif self.step == 2:
             if self.selected_type == "roi":
                 self.content_area.controls.append(
-                    ft.Text("Release of Information (ROI) Details", weight="bold")
+                    ft.Semantics(
+                        header=True,
+                        heading_level=2,
+                        content=ft.Text("Release of Information (ROI) Details", weight="bold")
+                    )
                 )
                 provs = list_providers(self.page.db_connection, self.patient_id)
 
@@ -274,7 +282,11 @@ class PaperworkWizard:
         elif self.step == 3:
             self.next_btn.disabled = False
             self.content_area.controls.append(
-                ft.Text("Step 3: Provide Your Signature", weight="bold", size=header_size)
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Step 3: Provide Your Signature", weight="bold", size=header_size)
+                )
             )
             self.content_area.controls.append(
                 ft.Text(
@@ -294,7 +306,11 @@ class PaperworkWizard:
 
         elif self.step == 4:
             self.content_area.controls.append(
-                ft.Text("Step 4: Output Preferences", weight="bold", size=header_size)
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Step 4: Output Preferences", weight="bold", size=header_size)
+                )
             )
             self.content_area.controls.extend([
                 ft.Text("Select which versions to generate:", size=pt_scale(self.page, 14)),

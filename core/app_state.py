@@ -123,9 +123,20 @@ def wipe_local_data(page) -> None:
     if paths.data_dir.exists():
         shutil.rmtree(paths.data_dir, ignore_errors=True)
 
-    # 4. Remove AI artifacts (models, embeddings)
+    # 4. Remove patient-specific AI artifacts (embeddings, caches)
+    #    but PRESERVE the models/ directory — it contains generic pre-trained
+    #    weights (no PHI) and costs ~2.5 GB to re-download.
     if paths.ai_dir.exists():
-        shutil.rmtree(paths.ai_dir, ignore_errors=True)
+        for child in paths.ai_dir.iterdir():
+            if child.name == "models":
+                continue  # keep downloaded model weights
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink()
+            except OSError:
+                pass
 
     # 5. Remove exports
     if paths.export_dir.exists():

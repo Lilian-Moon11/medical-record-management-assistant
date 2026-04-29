@@ -91,7 +91,7 @@ def apply_settings(page, *, get_view_for_index):
                 surface_container_low="#0a0a0a",
                 surface_container_lowest="#000000",
                 outline="#FFFFFF",
-                outline_variant="#555555",
+                outline_variant="#777777",  # WCAG 1.4.11: ≥3:1 vs #111111 surface
                 error="#FF6B6B",
                 on_error="#000000",
             )

@@ -284,8 +284,8 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
     lt_slider = ft.Slider(
         min=1.0,
-        max=1.5,
-        divisions=10,
+        max=2.0,       # WCAG 1.4.4: support text resize up to 200%
+        divisions=20,
         value=_lt_scale_val,
         label="{value:.2f}x",
         width=300,
@@ -506,7 +506,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
             page.mrma._new_rk_done_btn.on_click = commit_and_close
 
             page.mrma._new_rk_dlg = ft.AlertDialog(
-                modal=False,
+                modal=True,
                 title=ft.Text("New Recovery Key"),
                 content=ft.Column(
                     [
@@ -666,13 +666,40 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     except Exception as ex: pass
                     return
                 
-                from core.app_state import wipe_local_data
-                wipe_local_data(page)
+                # Capture logout ref BEFORE wipe (wipe resets page.mrma)
+                _logout_fn = getattr(page.mrma, '_logout', None)
+
+                # Close dialog — must call .update() on the control itself
+                # (same pattern as the Cancel button which works correctly)
+                page.mrma._wipe_dlg.open = False
                 try:
-                    page.window.destroy()
+                    page.mrma._wipe_dlg.update()
                 except Exception:
-                    import os
-                    os._exit(0)
+                    pass
+                page.update()
+
+                # Schedule wipe + navigate as async so the dialog close
+                # renders before we proceed
+                async def _finish_wipe():
+                    import asyncio
+                    await asyncio.sleep(0.05)  # yield to let UI flush
+
+                    page.overlay.clear()
+
+                    from core.app_state import wipe_local_data
+                    wipe_local_data(page)
+
+                    # logout() rebuilds a fresh login view with clean state
+                    if _logout_fn:
+                        _logout_fn()
+                    else:
+                        try:
+                            await page.window.destroy()
+                        except Exception:
+                            import os
+                            os._exit(0)
+
+                run_async(page, _finish_wipe())
 
             def close_wipe(_):
                 page.mrma._wipe_dlg.open = False
@@ -730,7 +757,11 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
             [
                 ft.Row(
                     [
-                        ft.Text("Settings", size=pt_scale(page, 24), weight="bold"),
+                        ft.Semantics(
+                            header=True,
+                            heading_level=1,
+                            content=ft.Text("Settings", size=pt_scale(page, 24), weight="bold"),
+                        ),
                         ft.Container(expand=True),
                         _info_btn,
                     ]
@@ -751,7 +782,11 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     ft.Button("Restore Defaults", icon=ft.Icons.RESTORE, on_click=reset_settings),
                 ]),
                 ft.Divider(),
-                ft.Text("Recovery Key", size=pt_scale(page, 18), weight="bold"),
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Recovery Key", size=pt_scale(page, 18), weight="bold"),
+                ),
                 ft.Text(
                     "Your recovery key allows you to restore your vault if you forget your password. "
                     "Rotating the recovery key will invalidate your old key and generate a new one.",
@@ -769,7 +804,11 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     ]
                 ),
                 ft.Divider(),
-                ft.Text("Export My Data", size=pt_scale(page, 18), weight="bold"),
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Export My Data", size=pt_scale(page, 18), weight="bold"),
+                ),
                 ft.Text(
                     "Save all your medical records to a portable zip file you can "
                     "move to another computer.  The file is encrypted with your "
@@ -786,9 +825,13 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     export_unencrypted_cb,
                     export_progress,
                 ]),
-                export_status,
+                ft.Semantics(live_region=True, content=export_status),
                 ft.Divider(),
-                ft.Text("Library / Shared Device Mode", size=pt_scale(page, 18), weight="bold", color=ft.Colors.RED),
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Library / Shared Device Mode", size=pt_scale(page, 18), weight="bold", color=ft.Colors.RED),
+                ),
                 ft.Text(
                     "Are you using a public computer or someone else's device? "
                     "Use this to securely erase your local database and temporary files before exiting. "

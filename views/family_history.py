@@ -6,7 +6,7 @@
 # License, or any later version.
 
 # -----------------------------------------------------------------------------
-# Social & Family History view - degree-grouped family history summary
+# Family & Social History view - degree-grouped family history summary
 # and structured social history questionnaire.
 # -----------------------------------------------------------------------------
 
@@ -36,7 +36,7 @@ def get_family_history_view(page: ft.Page) -> ft.Control:
     items = _load(page, patient_id)
     s = pt_scale(page, 1)
 
-    _info_btn = make_info_button(page, "Social & Family History", [
+    _info_btn = make_info_button(page, "Family & Social History", [
         "Add family members and their diagnosed conditions to build your family health summary.",
         "Conditions are grouped by degree (1st, 2nd, extended) - the same format used on medical intake forms.",
         "Click the pencil icon next to a condition to edit that family member's details.",
@@ -45,10 +45,14 @@ def get_family_history_view(page: ft.Page) -> ft.Control:
     ])
 
     header = ft.Row([
-        ft.Row([
-            ft.Icon(ft.Icons.GROUPS, color=ft.Colors.TEAL_600),
-            ft.Text("Social & Family History", size=24 * s, weight="bold"),
-        ], spacing=10),
+        ft.Semantics(
+            header=True,
+            heading_level=1,
+            content=ft.Row([
+                ft.Icon(ft.Icons.GROUPS, color=ft.Colors.TEAL_600),
+                ft.Text("Family & Social History", size=24 * s, weight="bold"),
+            ], spacing=10),
+        ),
         ft.Container(expand=True),
         ft.FilledButton("Add Family Member", icon=ft.Icons.PERSON_ADD,
                         on_click=lambda _: open_add_dialog(page, on_refresh)),
@@ -166,7 +170,11 @@ def get_family_history_view(page: ft.Page) -> ft.Control:
         page,
         ft.Column([
             ft.Row([
-                ft.Text("Family History", size=18 * s, weight="bold"),
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Family History", size=18 * s, weight="bold"),
+                ),
                 ft.Container(expand=True),
                 notes_btn,
             ]),
@@ -180,7 +188,11 @@ def get_family_history_view(page: ft.Page) -> ft.Control:
     social_panel = themed_panel(
         page,
         ft.Column([
-            ft.Text("Social History", size=18 * s, weight="bold"),
+            ft.Semantics(
+                header=True,
+                heading_level=2,
+                content=ft.Text("Social History", size=18 * s, weight="bold"),
+            ),
             ft.Container(height=4 * s),
             social_widget,
         ], spacing=0),

@@ -36,15 +36,17 @@ Expected JSON Structure for List Items:
 - medicationstatement.current_list: {{"name": "...", "dose": "...", "frequency": "...", "notes": "..."}}
 - procedures.list: {{"name": "...", "date": "YYYY-MM-DD", "surgeon": "...", "facility": "...", "notes": "..."}}
 - conditions.list: {{"name": "...", "onset_date": "YYYY-MM-DD", "diagnosis_date": "YYYY-MM-DD", "symptoms": "...", "notes": "..."}}
-- insurance.list: {{"payer": "...", "member_id": "...", "group_no": "...", "bin": "...", "pcn": "...", "phone": "...", "notes": "..."}}}
+- insurance.list: {{"payer": "...", "member_id": "...", "group_no": "...", "bin": "...", "pcn": "...", "phone": "...", "notes": "..."}}
+
+- Extract ONLY the facts explicitly stated in the document text. Do not invent or guess information.
 
 EXAMPLE OUTPUT FORMAT:
 [
-  {{"field_key": "patient.address", "value": "1210 Cullen Dr, Apt 4B, Forks, WA 98331", "confidence": 0.9}},
-  {{"field_key": "allergyintolerance.list", "value": {{"substance": "Penicillin", "reaction": "Hives", "notes": ""}}, "confidence": 0.9}},
-  {{"field_key": "medicationstatement.current_list", "value": {{"name": "Metformin", "dose": "500mg", "frequency": "Twice daily", "notes": ""}}, "confidence": 0.95}},
-  {{"field_key": "procedures.list", "value": {{"name": "Appendectomy", "date": "2019-03-12", "surgeon": "Dr. Jane Smith", "facility": "Memorial Hospital", "notes": ""}}, "confidence": 0.9}},
-  {{"field_key": "vitals.list", "value": {{"name": "Blood Pressure", "value": "120/80", "unit": "mmHg", "date": "2023-10-15"}}, "confidence": 0.9}}
+  {{"field_key": "patient.address", "value": "<STREET_ADDRESS_FROM_DOC>", "confidence": 0.9}},
+  {{"field_key": "allergyintolerance.list", "value": {{"substance": "<ALLERGEN_FROM_DOC>", "reaction": "<REACTION_FROM_DOC>", "notes": ""}}, "confidence": 0.9}},
+  {{"field_key": "medicationstatement.current_list", "value": {{"name": "<MEDICATION_NAME>", "dose": "<DOSE_AMOUNT>", "frequency": "<FREQUENCY>", "notes": ""}}, "confidence": 0.95}},
+  {{"field_key": "procedures.list", "value": {{"name": "<SURGERY_NAME>", "date": "YYYY-MM-DD", "surgeon": "<DOCTOR_NAME>", "facility": "<HOSPITAL_NAME>", "notes": ""}}, "confidence": 0.9}},
+  {{"field_key": "vitals.list", "value": {{"name": "Blood Pressure", "value": "<SYSTOLIC>/<DIASTOLIC>", "unit": "mmHg", "date": "YYYY-MM-DD"}}, "confidence": 0.9}}
 ]
 
 Document:

@@ -120,8 +120,8 @@ Instructions:
   Dx = Diagnosis, Sx = Symptoms, Sig = Signature, No/# = Number, Grp = Group.
   Match these to the closest patient data key.
 
-Example output format:
-{{"PatientName": "Jane Doe", "HasDiabetes": true, "Smoker": false, "Gender": "Female", "Allergies": "Penicillin, Latex"}}
+Example response:
+{"PatientName": "<PATIENT_NAME_FROM_PDF>", "HasDiabetes": true, "Smoker": false, "Gender": "<GENDER_FROM_PDF>", "Allergies": "<ALLERGIES_FROM_PDF>"}
 
 Output ONLY the JSON dictionary. No preamble. No trailing text.
 """

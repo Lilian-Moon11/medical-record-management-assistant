@@ -322,7 +322,7 @@ def ensure_dialogs_registered(page: ft.Page, *, s, show_snack):
     page.mrma._recovery_saved_check.on_change = on_check
 
     page.mrma._recovery_dlg = ft.AlertDialog(
-        modal=False,
+        modal=True,
         title=ft.Text("Save your recovery key", size=pt_scale(page, 18), weight="bold"),
         content=ft.Column(
             [
@@ -572,8 +572,8 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         show_snack(page, "Field deleted.", "green")
 
     page.mrma._delete_field_dlg = ft.AlertDialog(
-        modal=False,
-        title=ft.Text("Delete field?"),
+        modal=True,
+        title=ft.Semantics(header=True, content=ft.Text("Delete field?")),
         content=ft.Column([ft.Text("This will remove the field definition and any saved values."), page.mrma._delete_field_label], tight=True),
         actions=[
             ft.TextButton("Cancel", on_click=_close_delete),
@@ -623,8 +623,8 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         show_snack(page, "Field added.", "green")
 
     page.mrma._add_field_dlg = ft.AlertDialog(
-        modal=False, 
-        title=ft.Text("Add New Field"),
+        modal=True, 
+        title=ft.Semantics(header=True, content=ft.Text("Add New Field")),
         content=ft.Column([page.mrma._add_field_label_tf, page.mrma._add_field_category_dd, page.mrma._add_field_sensitive_cb], tight=True),
         actions=[
             ft.ElevatedButton("Cancel", on_click=_close_add),

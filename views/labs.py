@@ -220,7 +220,7 @@ def get_labs_view(page: ft.Page):
                 italic=True,
             )
             results_table.rows = []
-            test_title.value = "Select a metric or test"
+            test_title.content.value = "Select a metric or test"
             try:
                 test_title.update()
                 chart_container.update()
@@ -260,7 +260,7 @@ def get_labs_view(page: ft.Page):
         results_table.sort_ascending = asc
 
         # Update header
-        test_title.value = tn
+        test_title.content.value = tn
 
         # Build chart (always uses original chronological order — pass unsorted)
         # Build chart (always uses original chronological order — pass unsorted)
@@ -357,7 +357,11 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     # Right panel header
     # ----------------------------
-    test_title = ft.Text("Select a metric or test", size=22, weight="bold")
+    test_title = ft.Semantics(
+        header=True,
+        heading_level=1,
+        content=ft.Text("Select a metric or test", size=22, weight="bold")
+    )
 
     add_data_btn = ft.FilledButton(
         "Add Data",
@@ -398,7 +402,11 @@ def get_labs_view(page: ft.Page):
             right_header,
             chart_container,
             ft.Divider(),
-            ft.Text("Historical Test Table", size=16, weight="bold"),
+            ft.Semantics(
+                header=True,
+                heading_level=2,
+                content=ft.Text("Historical Test Table", size=16, weight="bold")
+            ),
             results_container,
         ],
         expand=True,

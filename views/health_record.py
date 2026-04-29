@@ -415,7 +415,14 @@ def get_health_record_view(page: ft.Page):
             controls=[
                 ft.Row(
                     [
-                        ft.Text("Health Record", size=pt_scale(page, 22), weight="bold"),
+                        ft.Semantics(
+                            header=True,
+                            heading_level=1,
+                            content=ft.Row([
+                                ft.Icon(ft.Icons.BADGE, color=ft.Colors.TEAL_600),
+                                ft.Text("Health Record", size=pt_scale(page, 24), weight="bold"),
+                            ], spacing=10),
+                        ),
                         ft.Container(expand=True),
                         search_field,
                         ft.FilledTonalButton(

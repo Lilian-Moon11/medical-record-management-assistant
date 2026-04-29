@@ -59,6 +59,9 @@ LOADING_TIPS = [
     'Settings tab: Check "Save unencrypted data" to export a plain-text ZIP with a readable PDF summary and your raw documents. This requires password confirmation for safety.',
     "Settings tab: Your recovery key lets you restore your vault if you ever forget your password. Rotating it will invalidate your old key and generate a fresh one. Always save the new key before closing the dialog.",
     'Settings tab: "Wipe Session & Exit" is for shared/public computers to securely erase your local database and temporary files so no one can access your data after you leave.',
+    # Navigation
+    "Keyboard Navigation: You can use the Left and Right arrow keys to switch between tabs when the navigation bar is focused.",
+    "Keyboard Navigation: Press Ctrl+1 through Ctrl+8 (or Cmd+1 through Cmd+8 on Mac) to quickly jump to any tab in the application.",
 ]
 
 

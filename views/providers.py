@@ -454,7 +454,11 @@ def get_providers_view(page: ft.Page):
 
     header = ft.Row(
         [
-            ft.Text("Provider Directory", size=20, weight="bold"),
+            ft.Semantics(
+                header=True,
+                heading_level=1,
+                content=ft.Text("Provider Directory", size=20, weight="bold"),
+            ),
             ft.Container(expand=True),
             ft.FilledButton("Add Provider", icon=ft.Icons.PERSON_ADD, on_click=open_new_provider),
             _info_btn,

@@ -296,11 +296,15 @@ def get_immunizations_view(page: ft.Page):
         content=ft.Column(
             [
                 ft.Row([
-                    ft.Row([
-                        ft.Icon(ft.Icons.VACCINES, color=ft.Colors.TEAL_600),
-                        ft.Text("Immunizations",
-                                size=pt_scale(page, 24), weight="bold"),
-                    ], spacing=10),
+                    ft.Semantics(
+                        header=True,
+                        heading_level=1,
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.VACCINES, color=ft.Colors.TEAL_600),
+                            ft.Text("Immunizations",
+                                    size=pt_scale(page, 24), weight="bold"),
+                        ], spacing=10),
+                    ),
                     ft.Container(expand=True),
                     ft.FilledButton(
                         "Add Immunization",
