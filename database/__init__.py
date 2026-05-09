@@ -41,6 +41,7 @@ from .clinical import (
     list_providers, create_provider, update_provider, delete_provider,
     list_lab_reports, create_lab_report, update_lab_report, delete_lab_report,
     list_lab_results_for_report, add_lab_result, update_lab_result, delete_lab_result,
+    get_or_create_report_for_date, cleanup_empty_reports, list_test_names_for_date,
     list_distinct_test_names, list_all_results_for_test,
     get_patient_documents, add_document, delete_document,
     get_document_metadata,

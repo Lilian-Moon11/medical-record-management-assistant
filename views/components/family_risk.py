@@ -65,15 +65,86 @@ def build_risk_summary(page: ft.Page, items: list[dict],
         ]
 
         if on_node_click:
-            row_c.append(
-                ft.IconButton(
-                    icon=ft.Icons.EDIT,
-                    icon_size=14 * s,
-                    tooltip="Edit family member",
-                    icon_color=ft.Colors.GREY_500,
-                    on_click=lambda e, r=rel, n=name: on_node_click(
-                        r, n, _get_person_entries(r, n)),
+            def _click(evt, r=rel, n=name):
+                on_node_click(r, n, _get_person_entries(r, n))
+            
+            def _info_click(evt, entry=e):
+                from utils.ui_helpers import append_dialog
+                ai_fname = entry.get("_ai_source", "")
+                source_val = entry.get("_source", "")
+                updated_val = str(entry.get("_updated", "") or "\u2014")
+                
+                if ai_fname:
+                    def _open_ai_doc(ev, fname=ai_fname):
+                        page.mrma._doc_search_term = fname
+                        page.go("/documents")
+                    
+                    source_control = ft.Text(
+                        spans=[
+                            ft.TextSpan("Source: ", style=ft.TextStyle(italic=True)),
+                            ft.TextSpan(ai_fname, style=ft.TextStyle(color=ft.Colors.BLUE), on_click=_open_ai_doc)
+                        ],
+                        tooltip=f"Open source document: {ai_fname}"
+                    )
+                else:
+                    source_lbl = source_val.capitalize() if source_val else 'Manual entry'
+                    if source_lbl.lower() == 'ai': source_lbl = 'AI extraction'
+                    source_control = ft.Text(f"Source: {source_lbl}", italic=True)
+
+                def _close_info(ev=None):
+                    dlg.open = False
+                    page.update()
+
+                dlg = ft.AlertDialog(
+                    title=ft.Row([
+                        ft.Text("Details", weight="bold"),
+                        ft.IconButton(ft.Icons.CLOSE, on_click=_close_info)
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    content=ft.Container(
+                        width=400,
+                        content=ft.Column([
+                            ft.Text(f"Condition: {entry.get('condition', '')}"),
+                            ft.Text(f"Family Member: {who_label}"),
+                            ft.Divider(),
+                            ft.Text(f"Notes: {entry.get('notes', 'None')}"),
+                            ft.Divider(),
+                            source_control,
+                            ft.Text(f"Updated: {updated_val}", size=12, italic=True),
+                        ], tight=True)
+                    ),
+                    actions=[ft.FilledButton("Close", on_click=_close_info)],
+                    actions_alignment=ft.MainAxisAlignment.END,
+                    on_dismiss=_close_info
                 )
+                append_dialog(page, dlg)
+                dlg.open = True
+                page.update()
+
+            row_c.append(
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.INFO_OUTLINE,
+                        icon_size=14 * s,
+                        tooltip="View details",
+                        icon_color=ft.Colors.GREY_500,
+                        on_click=_info_click,
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT,
+                        icon_size=14 * s,
+                        tooltip="Edit family member",
+                        icon_color=ft.Colors.GREY_500,
+                        on_click=_click,
+                    )
+                ], spacing=0, tight=True)
+            )
+
+            return ft.Container(
+                content=ft.Row(row_c, spacing=6),
+                on_click=_click,
+                ink=True,
+                border_radius=4,
+                padding=ft.padding.symmetric(horizontal=4, vertical=2)
             )
 
         return ft.Row(row_c, spacing=6)

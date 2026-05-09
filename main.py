@@ -111,6 +111,10 @@ def main(page: ft.Page):
     def _on_keyboard(e: ft.KeyboardEvent):
         page.mrma._last_activity = time.time()
 
+        # Disable keyboard navigation if any dialog/overlay is currently open
+        if any(getattr(ctrl, "open", False) for ctrl in page.overlay):
+            return
+
         rail = getattr(page, "nav_rail", None)
 
         # Ctrl+1..8 (or Cmd+1..8)  →  switch tab directly

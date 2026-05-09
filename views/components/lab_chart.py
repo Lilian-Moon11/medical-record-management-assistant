@@ -6,28 +6,48 @@
 # License, or any later version.
 
 from __future__ import annotations
+import re
 import flet as ft
 import flet.canvas as cv
 from utils.ui_helpers import pt_scale
 
 def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Container):
     """Build a canvas-based line chart from the results rows and set it as chart_container's content."""
-    CHART_H = pt_scale(page, 200)
+    CHART_H = pt_scale(page, 220)
     CHART_PAD_L = pt_scale(page, 55)   # left padding for y-axis labels
     CHART_PAD_R = pt_scale(page, 20)
-    CHART_PAD_T = pt_scale(page, 15)
-    CHART_PAD_B = pt_scale(page, 30)   # bottom padding for x-axis labels
+    CHART_PAD_T = pt_scale(page, 20)
+    CHART_PAD_B = pt_scale(page, 35)   # bottom padding for x-axis labels
 
     # Track per-point data including individual reference ranges
-    numeric_pts = []  # list of (index, value_num, date_label, tooltip_text, ref_low, ref_high)
+    numeric_pts = []  # list of (index, vals_list, date_label, tooltip_text, ref_low, ref_high)
+    max_series_count = 0
 
     for row in results_rows:
         vn = row[3]  # value_num
-        if vn is None:
-            continue
+        vt = row[2]  # value_text
+        vals = []
+
+        if vt and isinstance(vt, str):
+            # Match "num/num" or "num / num"
+            m = re.match(r'^\s*([\d\.]+)\s*/\s*([\d\.]+)\s*$', vt)
+            if m:
+                try:
+                    vals = [float(m.group(1)), float(m.group(2))]
+                except ValueError:
+                    pass
+
+        if not vals:
+            if vn is not None:
+                vals = [vn]
+            else:
+                continue
+
+        max_series_count = max(max_series_count, len(vals))
+
         d = row[10] or row[14] or ""  # result_date or collected_date
         tip = f"{d}\n{row[2] or ''} {row[4] or ''}"
-        numeric_pts.append((len(numeric_pts), vn, d, tip, row[6], row[7]))
+        numeric_pts.append((len(numeric_pts), vals, d, tip, row[6], row[7]))
 
     if not numeric_pts:
         chart_container.content = ft.Text(
@@ -39,9 +59,11 @@ def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Conta
         )
         return
 
-    values = [p[1] for p in numeric_pts]
-    min_y = min(values)
-    max_y = max(values)
+    all_values = []
+    for p in numeric_pts:
+        all_values.extend(p[1])
+    min_y = min(all_values)
+    max_y = max(all_values)
     y_range = max_y - min_y if max_y > min_y else 10
     chart_min_y = min_y - y_range * 0.2
     chart_max_y = max_y + y_range * 0.2
@@ -66,12 +88,27 @@ def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Conta
         return CHART_PAD_T + draw_h - ((val - chart_min_y) / y_span) * draw_h
 
     shapes = []
-    line_paint = ft.Paint(color=ft.Colors.LIGHT_BLUE_400, stroke_width=2, style=ft.PaintingStyle.STROKE)
-    dot_paint = ft.Paint(color=ft.Colors.LIGHT_BLUE_400, style=ft.PaintingStyle.FILL)
+    line_colors = [ft.Colors.LIGHT_BLUE_400, ft.Colors.ORANGE_400, ft.Colors.TEAL_400, ft.Colors.PURPLE_400]
+
+    # Cache paints per series index to avoid re-creating objects
+    _line_paint_cache = {}
+    _dot_paint_cache = {}
+
+    def get_line_paint(s_idx):
+        if s_idx not in _line_paint_cache:
+            c = line_colors[s_idx % len(line_colors)]
+            _line_paint_cache[s_idx] = ft.Paint(color=c, stroke_width=2, style=ft.PaintingStyle.STROKE)
+        return _line_paint_cache[s_idx]
+
+    def get_dot_paint(s_idx):
+        if s_idx not in _dot_paint_cache:
+            c = line_colors[s_idx % len(line_colors)]
+            _dot_paint_cache[s_idx] = ft.Paint(color=c, style=ft.PaintingStyle.FILL)
+        return _dot_paint_cache[s_idx]
+
     grid_paint = ft.Paint(color=ft.Colors.with_opacity(0.15, ft.Colors.ON_SURFACE), stroke_width=1, style=ft.PaintingStyle.STROKE)
     ref_paint = ft.Paint(color=ft.Colors.with_opacity(0.5, ft.Colors.GREEN), stroke_width=1, style=ft.PaintingStyle.STROKE)
     ref_fill_paint = ft.Paint(color=ft.Colors.with_opacity(0.08, ft.Colors.GREEN), style=ft.PaintingStyle.FILL)
-    text_paint = ft.Paint(color=ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY)
 
     # Grid lines (4 horizontal)
     for i in range(5):
@@ -133,21 +170,31 @@ def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Conta
                 _draw_ref_segment(x_start, x_end, rl, ref_paint)
 
     # Data lines connecting points
-    for i in range(1, n):
-        x1, y1 = _x(i - 1), _y(numeric_pts[i - 1][1])
-        x2, y2 = _x(i), _y(numeric_pts[i][1])
-        shapes.append(cv.Line(x1, y1, x2, y2, paint=line_paint))
+    for s_idx in range(max_series_count):
+        lp = get_line_paint(s_idx)
+        for i in range(1, n):
+            vals_prev = numeric_pts[i - 1][1]
+            vals_curr = numeric_pts[i][1]
+            if s_idx < len(vals_prev) and s_idx < len(vals_curr):
+                x1, y1 = _x(i - 1), _y(vals_prev[s_idx])
+                x2, y2 = _x(i), _y(vals_curr[s_idx])
+                shapes.append(cv.Line(x1, y1, x2, y2, paint=lp))
 
     # Data point dots
-    for i, (idx, val, d, tip, _rl, _rh) in enumerate(numeric_pts):
-        px, py = _x(i), _y(val)
-        shapes.append(cv.Circle(px, py, 4, paint=dot_paint))
+    for i, (idx, vals, d, tip, _rl, _rh) in enumerate(numeric_pts):
+        for s_idx, val in enumerate(vals):
+            dp = get_dot_paint(s_idx)
+            px, py = _x(i), _y(val)
+            shapes.append(cv.Circle(px, py, 4, paint=dp))
 
     # X-axis date labels (show ~6 max)
     label_step = max(1, n // 6)
-    for i, (idx, val, d, tip, _rl, _rh) in enumerate(numeric_pts):
+    for i, (idx, vals, d, tip, _rl, _rh) in enumerate(numeric_pts):
         if i % label_step == 0 or i == n - 1:
-            short = d[5:] if len(d) >= 7 else d
+            if len(d) >= 10 and d[4] == '-' and d[7] == '-':
+                short = f"{d[5:7]}/{d[8:10]}/{d[2:4]}"
+            else:
+                short = d
             shapes.append(cv.Text(_x(i) - 15, CHART_H - CHART_PAD_B + 5, short, style=ft.TextStyle(size=9, color=ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY)))
 
     chart_canvas = cv.Canvas(
@@ -155,4 +202,33 @@ def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Conta
         width=600,
         height=CHART_H,
     )
-    chart_container.content = chart_canvas
+
+    # Build legend row for multi-series charts
+    if max_series_count > 1:
+        # Blood pressure convention: first value = Systolic, second = Diastolic
+        _SERIES_LABELS = {0: "Systolic", 1: "Diastolic"}
+        legend_items = []
+        for s_idx in range(max_series_count):
+            color = line_colors[s_idx % len(line_colors)]
+            label = _SERIES_LABELS.get(s_idx, f"Series {s_idx + 1}")
+            legend_items.append(
+                ft.Row([
+                    ft.Container(
+                        width=10, height=10,
+                        bgcolor=color,
+                        border_radius=5,
+                    ),
+                    ft.Text(label, size=11),
+                ], spacing=4, tight=True)
+            )
+
+        chart_container.content = ft.Column([
+            chart_canvas,
+            ft.Row(
+                legend_items,
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=16,
+            ),
+        ], tight=True, spacing=4)
+    else:
+        chart_container.content = chart_canvas

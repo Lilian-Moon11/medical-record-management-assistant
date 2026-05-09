@@ -56,7 +56,7 @@ def ensure_sensitive_dialogs_registered(page: ft.Page, *, s, show_snack):
 
     page.mrma._sensitive_revealed = False
 
-    title = ft.Text("Sensitive Details", size=pt_scale(page, 18), weight="bold")
+    title = ft.Semantics(header=True, content=ft.Text("Sensitive Details", size=pt_scale(page, 18), weight="bold"))
     hint = ft.Text("Click Reveal to show DOB and SSN.", size=pt_scale(page, 12))
 
     dob_text = ft.Text("DOB: ****-**-**", selectable=True)
@@ -164,9 +164,14 @@ def ensure_sensitive_dialogs_registered(page: ft.Page, *, s, show_snack):
         page.mrma._sensitive_dlg.open = False
         _load_masked()
 
+    page.mrma._ssn_field.on_submit = _save_ssn
+
     page.mrma._sensitive_dlg = ft.AlertDialog(
         modal=False,
-        title=title,
+        title=ft.Row([
+            title,
+            ft.IconButton(ft.Icons.CLOSE, on_click=_close)
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         content=ft.Column(
             [
                 hint,
@@ -323,7 +328,7 @@ def ensure_dialogs_registered(page: ft.Page, *, s, show_snack):
 
     page.mrma._recovery_dlg = ft.AlertDialog(
         modal=True,
-        title=ft.Text("Save your recovery key", size=pt_scale(page, 18), weight="bold"),
+        title=ft.Semantics(header=True, content=ft.Text("Save your recovery key", size=pt_scale(page, 18), weight="bold")),
         content=ft.Column(
             [
                 ft.Text(
@@ -450,9 +455,16 @@ def ensure_dialogs_registered(page: ft.Page, *, s, show_snack):
             except Exception:
                 pass
 
+    page.mrma._forgot_recovery_field.on_submit = do_recover
+    page.mrma._forgot_new_pwd_field.on_submit = do_recover
+    page.mrma._forgot_new_pwd2_field.on_submit = do_recover
+
     page.mrma._forgot_dlg = ft.AlertDialog(
         modal=False,
-        title=ft.Text("Recover account"),
+        title=ft.Row([
+            ft.Semantics(header=True, content=ft.Text("Recover account")),
+            ft.IconButton(ft.Icons.CLOSE, on_click=forgot_close)
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         content=ft.Column(
             [
                 ft.Text(
@@ -572,8 +584,11 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         show_snack(page, "Field deleted.", "green")
 
     page.mrma._delete_field_dlg = ft.AlertDialog(
-        modal=True,
-        title=ft.Semantics(header=True, content=ft.Text("Delete field?")),
+        modal=False,
+        title=ft.Row([
+            ft.Semantics(header=True, content=ft.Text("Delete field?")),
+            ft.IconButton(ft.Icons.CLOSE, on_click=_close_delete)
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         content=ft.Column([ft.Text("This will remove the field definition and any saved values."), page.mrma._delete_field_label], tight=True),
         actions=[
             ft.TextButton("Cancel", on_click=_close_delete),
@@ -622,9 +637,14 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         page.mrma._patient_info_refresh_callback()
         show_snack(page, "Field added.", "green")
 
+    page.mrma._add_field_label_tf.on_submit = _do_add
+
     page.mrma._add_field_dlg = ft.AlertDialog(
-        modal=True, 
-        title=ft.Semantics(header=True, content=ft.Text("Add New Field")),
+        modal=False, 
+        title=ft.Row([
+            ft.Semantics(header=True, content=ft.Text("Add New Field")),
+            ft.IconButton(ft.Icons.CLOSE, on_click=_close_add)
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         content=ft.Column([page.mrma._add_field_label_tf, page.mrma._add_field_category_dd, page.mrma._add_field_sensitive_cb], tight=True),
         actions=[
             ft.ElevatedButton("Cancel", on_click=_close_add),
@@ -695,7 +715,10 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
     # CREATE THE DIALOG ONCE
     page.mrma._bulk_edit_dlg = ft.AlertDialog(
         modal=False,
-        title=ft.Text("Edit Visibility"),
+        title=ft.Row([
+            ft.Semantics(header=True, content=ft.Text("Edit Visibility")),
+            ft.IconButton(ft.Icons.CLOSE, on_click=_close_bulk)
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         content=ft.Container(width=400, content=page.mrma._bulk_edit_col),
         actions=[
             ft.TextButton("Cancel", on_click=_close_bulk),

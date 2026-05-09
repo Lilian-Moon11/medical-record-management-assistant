@@ -15,6 +15,7 @@ from utils.ui_helpers import (
     pt_scale,
     show_snack,
     make_eye_btn,
+    append_dialog,
 )
 from views.components.helpers import (
     _ensure_sets, 
@@ -31,6 +32,7 @@ _FIELD_WIDTHS: dict = {
     "reaction":       200,
     "symptoms":       200,
     "dose":            90,
+    "route":           110,
     "frequency":      130,
     # Date columns
     "date":           110,
@@ -134,16 +136,11 @@ class ListEditorBody(ft.Column):
     def _build_col_headers(self) -> List[ft.DataColumn]:
         cols: List[ft.DataColumn] = []
         for k, lbl in self.columns:
-            if k == "is_current":
+            if k.startswith("is_"):
                 cols.append(ft.DataColumn(ft.Text(lbl)))
             else:
                 cols.append(ft.DataColumn(ft.Text(lbl), on_sort=self._on_col_sort))
-        _ss = bool(getattr(self._page, "_show_source", False))
-        _su = bool(getattr(self._page, "_show_updated", False))
-        if _ss:
-            cols.append(ft.DataColumn(ft.Text("Source")))
-        if _su:
-            cols.append(ft.DataColumn(ft.Text("Updated")))
+        cols.append(ft.DataColumn(ft.Text("Info")))
         cols.append(ft.DataColumn(ft.Text("Actions")))
         return cols
 
@@ -151,8 +148,6 @@ class ListEditorBody(ft.Column):
     # Row building
     # ------------------------------------------------------------------
     def _build_table_rows(self) -> None:
-        _ss = bool(getattr(self._page, "_show_source", False))
-        _su = bool(getattr(self._page, "_show_updated", False))
         self._ctrl_refs = {}
         rows: List[ft.DataRow] = []
 
@@ -167,88 +162,43 @@ class ListEditorBody(ft.Column):
             cells: List[ft.DataCell] = []
 
             for k, _lbl in self.columns:
-                if k == "is_current":
+                if k.startswith("is_"):
+                    # For newly added rows that don't have the key yet, default to True for active/current fields
+                    default_val = True if item.get(k) is None else bool(item.get(k))
                     cb = ft.Checkbox(
-                        value=bool(item.get(k, False)),
+                        value=default_val,
                         on_change=lambda e, iid=item_id: self._save_row(iid),
                     )
                     ctrl_map[k] = cb
                     cells.append(ft.DataCell(cb))
                 else:
                     col_w = pt_scale(self._page, _FIELD_WIDTHS.get(k, _DEFAULT_FIELD_WIDTH))
-                    tf = ft.TextField(
-                        value=str(item.get(k, "") or ""),
-                        dense=True,
-                        border_radius=4,
-                        password=self.is_section_sensitive and not revealed,
-                        can_reveal_password=False,
+                    val_str = str(item.get(k, "") or "")
+                    
+                    if self.is_section_sensitive and not revealed:
+                        display_str = "••••••••" if val_str else ""
+                    else:
+                        display_str = val_str
+
+                    # Read-only container that opens the edit dialog when clicked
+                    text_ctrl = ft.Text(display_str, no_wrap=False, size=pt_scale(self._page, 13))
+                    container = ft.Container(
+                        content=text_ctrl,
                         width=col_w,
+                        padding=ft.padding.symmetric(vertical=pt_scale(self._page, 8)),
+                        on_click=lambda e, iid=item_id: self._open_edit_dialog(iid),
+                        ink=True,
                     )
-                    ctrl_map[k] = tf
-                    cells.append(ft.DataCell(tf))
+                    ctrl_map[k] = text_ctrl # store ref to Text to toggle visibility
+                    cells.append(ft.DataCell(container))
 
             self._ctrl_refs[item_id] = ctrl_map
 
-            # --- Provenance cells ---
-            if _ss:
-                src_val = str(item.get("_source", "") or "User")
-                ai_fname = item.get("_ai_source", "")
-                if src_val.lower() == "ai" and ai_fname:
-                    def _open_ai_doc(e, fname=ai_fname):
-                        import os, tempfile, time as _time
-                        from crypto.file_crypto import (
-                            get_or_create_file_master_key, decrypt_bytes,
-                        )
-                        from utils.open_file import open_file_cross_platform
-                        try:
-                            cur = self._page.db_connection.cursor()
-                            cur.execute(
-                                "SELECT file_path FROM documents "
-                                "WHERE patient_id=? AND file_name=? "
-                                "ORDER BY id DESC LIMIT 1",
-                                (self.patient_id, fname),
-                            )
-                            row = cur.fetchone()
-                            if not row or not row[0]:
-                                show_snack(self._page, "Source file not found.", "red")
-                                return
-                            from core.paths import resolve_doc_path
-                            resolved = str(resolve_doc_path(row[0]))
-                            if not os.path.exists(resolved):
-                                show_snack(self._page, "Source file not found.", "red")
-                                return
-                            fmk = get_or_create_file_master_key(
-                                self._page.db_connection,
-                                dmk_raw=self._page.db_key_raw,
-                            )
-                            with open(resolved, "rb") as f:
-                                ciphertext = f.read()
-                            plaintext = decrypt_bytes(fmk, ciphertext)
-                            _, ext = os.path.splitext(fname)
-                            tmp = os.path.join(
-                                tempfile.gettempdir(),
-                                f"mrma_dec_{int(_time.time())}{ext or '.pdf'}",
-                            )
-                            with open(tmp, "wb") as f:
-                                f.write(plaintext)
-                            open_file_cross_platform(tmp)
-                            show_snack(self._page, f"Opened {fname}", "blue")
-                        except Exception as ex:
-                            show_snack(self._page, f"Open failed: {ex}", "red")
-
-                    src_ctrl: ft.Control = ft.TextButton(
-                        ai_fname,
-                        on_click=_open_ai_doc,
-                        tooltip="Open source document",
-                        style=ft.ButtonStyle(color=ft.Colors.BLUE, padding=0),
-                    )
-                else:
-                    src_ctrl = ft.Text(src_val)
-                cells.append(ft.DataCell(src_ctrl))
-
-            if _su:
-                upd_val = str(item.get("_updated", "") or "\u2014")
-                cells.append(ft.DataCell(ft.Text(upd_val)))
+            # --- Info cell ---
+            def info_click(e, iid=item_id):
+                self._open_info_dialog(iid)
+            info_btn = ft.IconButton(icon=ft.Icons.INFO_OUTLINE, tooltip="View details", on_click=info_click)
+            cells.append(ft.DataCell(info_btn))
 
             # --- Action cell (eye? + save + delete) ---
             action_ctrls: List[ft.Control] = []
@@ -258,10 +208,10 @@ class ListEditorBody(ft.Column):
                 action_ctrls.append(eye)
             action_ctrls += [
                 ft.IconButton(
-                    ft.Icons.SAVE,
-                    tooltip="Save row",
+                    ft.Icons.EDIT,
+                    tooltip="Edit row",
                     icon_size=18,
-                    on_click=lambda e, iid=item_id: self._save_row(iid),
+                    on_click=lambda e, iid=item_id: self._open_edit_dialog(iid),
                 ),
                 ft.IconButton(
                     ft.Icons.DELETE,
@@ -306,7 +256,7 @@ class ListEditorBody(ft.Column):
             if any(
                 str(d.get(k, "")).strip() != ""
                 for k, _ in self.columns
-                if k != "is_current"
+                if not k.startswith("is_")
             )
         ]
         self.on_save(clean)
@@ -314,17 +264,93 @@ class ListEditorBody(ft.Column):
     # ------------------------------------------------------------------
     # Row operations
     # ------------------------------------------------------------------
+    def _open_edit_dialog(self, item_id: str) -> None:
+        item = next((x for x in self._items if x.get("_id") == item_id), None)
+        if not item: return
+
+        dlg_fields = {}
+        controls = []
+        for k, lbl in self.columns:
+            if k.startswith("is_"):
+                # Default to True for new items
+                default_val = True if item.get(k) is None else bool(item.get(k))
+                cb = ft.Checkbox(label=lbl, value=default_val)
+                dlg_fields[k] = cb
+                controls.append(cb)
+            else:
+                tf = ft.TextField(
+                    label=lbl,
+                    value=str(item.get(k, "") or ""),
+                    dense=True,
+                    multiline=(k in ["notes", "symptoms"]),
+                    min_lines=5 if k in ["notes", "symptoms"] else 1
+                )
+                dlg_fields[k] = tf
+                controls.append(tf)
+
+        def _save(e=None):
+            d = dict(item)
+            for k, ctrl in dlg_fields.items():
+                if isinstance(ctrl, ft.Checkbox):
+                    d[k] = bool(ctrl.value)
+                else:
+                    d[k] = (ctrl.value or "").strip()
+            
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            d["_updated"] = now_str
+
+            for i, it in enumerate(self._items):
+                if it.get("_id") == item_id:
+                    self._items[i] = d
+                    break
+            
+            self._persist()
+            self._build_table_rows()
+            _safe_update(self.data_table)
+            dlg.open = False
+            _safe_update(dlg)
+            show_snack(self._page, "Saved row.", "green")
+
+        def _cancel(e=None):
+            dlg.open = False
+            _safe_update(dlg)
+
+        for k, ctrl in dlg_fields.items():
+            if isinstance(ctrl, ft.TextField) and ctrl.multiline is False:
+                ctrl.on_submit = _save
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Text("Edit Item"),
+                ft.IconButton(ft.Icons.CLOSE, on_click=_cancel)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            content=ft.Column(controls, tight=True, scroll=ft.ScrollMode.AUTO, width=pt_scale(self._page, 600)),
+            actions=[
+                ft.TextButton("Cancel", on_click=_cancel),
+                ft.FilledButton("Save", on_click=_save)
+            ],
+            on_dismiss=_cancel
+        )
+        
+        append_dialog(self._page, dlg)
+        dlg.open = True
+        self._page.update()
+
     def _save_row(self, item_id: str) -> None:
-        d = self._collect_item(item_id)
+        # Kept for compatibility with inline checkboxes (e.g. is_current)
+        d = next((x for x in self._items if x.get("_id") == item_id), {})
+        # Update any checkbox state directly from UI
+        ctrls = self._ctrl_refs.get(item_id, {})
+        for k, _ in self.columns:
+            ctrl = ctrls.get(k)
+            if isinstance(ctrl, ft.Checkbox):
+                d[k] = bool(ctrl.value)
+        
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        d["_source"] = "user"
         d["_updated"] = now_str
-        for i, item in enumerate(self._items):
-            if item.get("_id") == item_id:
-                self._items[i] = d
-                break
         self._persist()
-        show_snack(self._page, "Saved row.", "green")
+        show_snack(self._page, "Saved.", "green")
 
     def _delete_row(self, item_id: str) -> None:
         dlg = _make_list_delete_dialog(self._page)
@@ -352,6 +378,95 @@ class ListEditorBody(ft.Column):
         self._items.append(new_item)
         self._build_table_rows()
         _safe_update(self.data_table)
+        self._open_edit_dialog(new_item["_id"])
+
+    def _open_info_dialog(self, item_id: str) -> None:
+        from utils.ui_helpers import append_dialog
+        
+        item = next((x for x in self._items if x.get("_id") == item_id), {})
+        if not item: return
+
+        ai_fname = item.get("_ai_source", "")
+        updated_val = str(item.get("_updated", "") or "\u2014")
+
+        # Keep existing external decrypt-and-open behavior
+        if ai_fname:
+            def _open_ai_doc(e, fname=ai_fname):
+                import os, tempfile, time as _time
+                from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
+                from utils.open_file import open_file_cross_platform
+                try:
+                    cur = self._page.db_connection.cursor()
+                    cur.execute(
+                        "SELECT file_path FROM documents WHERE patient_id=? AND file_name=? ORDER BY id DESC LIMIT 1",
+                        (self.patient_id, fname),
+                    )
+                    row = cur.fetchone()
+                    if not row or not row[0]:
+                        show_snack(self._page, "Source file not found.", "red")
+                        return
+                    from core.paths import resolve_doc_path
+                    resolved = str(resolve_doc_path(row[0]))
+                    if not os.path.exists(resolved):
+                        show_snack(self._page, "Source file not found.", "red")
+                        return
+                    fmk = get_or_create_file_master_key(self._page.db_connection, dmk_raw=self._page.db_key_raw)
+                    with open(resolved, "rb") as f:
+                        ciphertext = f.read()
+                    plaintext = decrypt_bytes(fmk, ciphertext)
+                    _, ext = os.path.splitext(fname)
+                    tmp = os.path.join(tempfile.gettempdir(), f"mrma_dec_{int(_time.time())}{ext or '.pdf'}")
+                    with open(tmp, "wb") as f:
+                        f.write(plaintext)
+                    open_file_cross_platform(tmp)
+                    show_snack(self._page, f"Opened {fname}", "blue")
+                except Exception as ex:
+                    show_snack(self._page, f"Open failed: {ex}", "red")
+
+            source_control = ft.Text(
+                spans=[
+                    ft.TextSpan("Source: ", style=ft.TextStyle(italic=True)),
+                    ft.TextSpan(
+                        ai_fname,
+                        style=ft.TextStyle(color=ft.Colors.BLUE),
+                        on_click=_open_ai_doc,
+                    )
+                ],
+                tooltip=f"Open source document: {ai_fname}"
+            )
+        else:
+            source_control = ft.Text("Source: Manual entry", italic=True)
+
+        body_controls = []
+        for k, lbl in self.columns:
+            val = str(item.get(k, "") or "")
+            if val:
+                body_controls.append(ft.Text(f"{lbl}: {val}"))
+        
+        if not body_controls:
+            body_controls.append(ft.Text("No data available."))
+            
+        body_controls.append(ft.Divider())
+        body_controls.append(source_control)
+        body_controls.append(ft.Text(f"Updated: {updated_val}", size=12, italic=True))
+
+        def _close(e=None):
+            dlg.open = False
+            _safe_update(dlg)
+
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("Details", weight="bold"),
+                ft.IconButton(ft.Icons.CLOSE, on_click=_close)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            content=ft.Column(body_controls, tight=True, scroll=True),
+            actions=[ft.FilledButton("Close", on_click=_close)],
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=_close
+        )
+        append_dialog(self._page, dlg)
+        dlg.open = True
+        self._page.update()
 
     # ------------------------------------------------------------------
     # Sensitivity toggles
@@ -375,8 +490,9 @@ class ListEditorBody(ft.Column):
             self._page.mrma._field_vis[vis_key] = self.panel_revealed
             for k, _ in self.columns:
                 ctrl = self._ctrl_refs.get(iid, {}).get(k)
-                if isinstance(ctrl, ft.TextField):
-                    ctrl.password = not self.panel_revealed
+                if isinstance(ctrl, ft.Text):
+                    val_str = str(item.get(k, "") or "")
+                    ctrl.value = val_str if self.panel_revealed else ("••••••••" if val_str else "")
                     _safe_update(ctrl)
 
     def _toggle_row_reveal(self, item_id: str) -> None:
@@ -386,8 +502,10 @@ class ListEditorBody(ft.Column):
         self._page.mrma._field_vis[vis_key] = new_state
         for k, _ in self.columns:
             ctrl = self._ctrl_refs.get(item_id, {}).get(k)
-            if isinstance(ctrl, ft.TextField):
-                ctrl.password = not new_state
+            if isinstance(ctrl, ft.Text):
+                item = next((x for x in self._items if x.get("_id") == item_id), {})
+                val_str = str(item.get(k, "") or "")
+                ctrl.value = val_str if new_state else ("••••••••" if val_str else "")
                 _safe_update(ctrl)
 
     # ------------------------------------------------------------------
@@ -398,18 +516,10 @@ class ListEditorBody(ft.Column):
         if col_idx >= len(self.columns):
             return
         col_key = self.columns[col_idx][0]
-        if col_key == "is_current":
+        if col_key.startswith("is_"):
             return
 
-        # Snapshot live TextField values before sorting
-        for item in self._items:
-            iid = item.get("_id")
-            if iid and iid in self._ctrl_refs:
-                for k, _ in self.columns:
-                    ctrl = self._ctrl_refs[iid].get(k)
-                    if ctrl and not isinstance(ctrl, ft.Checkbox):
-                        item[k] = (ctrl.value or "").strip()
-
+        # No need to snapshot live TextField values anymore since they are stored in item directly
         if self._sort_col_key == col_key:
             self._sort_asc = not self._sort_asc
         else:

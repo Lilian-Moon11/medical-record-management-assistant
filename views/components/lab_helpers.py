@@ -42,16 +42,19 @@ def _flag_result(flag: str | None) -> str:
 
 def _flag_chip(flag: str | None) -> ft.Control:
     """Return a colored chip for the flag column."""
-    if not flag:
-        f_upper = "N"
-    else:
-        f_upper = flag.strip().upper()
+    if not flag or not flag.strip():
+        # No flag data — show neutral indicator, not "Normal"
+        return ft.Text("—", size=11, color=ft.Colors.GREY_500)
 
-    label_map = {"H": "High", "L": "Low", "A": "Abnormal", "N": "Normal"}
-    color_map = {"H": "red", "L": "blue", "A": "orange", "N": "green"}
+    f_upper = flag.strip().upper()
 
-    label = label_map.get(f_upper, flag or "Normal")
-    bg = color_map.get(f_upper, "green")
+    label_map = {"H": "High", "L": "Low", "A": "Abnormal", "N": "Normal",
+                 "NORMAL": "Normal", "ABNORMAL": "Abnormal", "HIGH": "High", "LOW": "Low"}
+    color_map = {"H": "red", "L": "blue", "A": "orange", "N": "green",
+                 "NORMAL": "green", "ABNORMAL": "orange", "HIGH": "red", "LOW": "blue"}
+
+    label = label_map.get(f_upper, flag)
+    bg = color_map.get(f_upper, "grey")
 
     return ft.Container(
         content=ft.Text(label, size=11, color="white", weight="bold"),

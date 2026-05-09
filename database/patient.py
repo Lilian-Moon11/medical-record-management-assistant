@@ -10,8 +10,8 @@
 # Patient profile and dynamic field persistence helpers.
 #
 # This module provides lightweight database functions for storing and retrieving
-# the core patient profile (name, DOB, notes) and a flexible ìfield definitions +
-# per-patient valuesî system used to support customizable Patient Info screens.
+# the core patient profile (name, DOB, notes) and a flexible ‚Äúfield definitions +
+# per-patient values‚Äù system used to support customizable Patient Info screens.
 #
 # Responsibilities include:
 # - CRUD operations for the single active patient profile record
@@ -26,7 +26,7 @@
 # Design goals:
 # - Keep the DB layer simple and predictable (small functions, explicit commits)
 # - Support user-defined fields without schema changes
-# - Track ìsourceî and ìupdated_atî to support provenance-aware UI
+# - Track ‚Äúsource‚Äù and ‚Äúupdated_at‚Äù to support provenance-aware UI
 # -----------------------------------------------------------------------------
 
 from datetime import datetime
@@ -57,13 +57,32 @@ def ensure_field_definition(conn, field_key, label, data_type="text", category="
 
 def get_patient_field_map(conn, patient_id):
     cur = conn.cursor()
-    cur.execute("SELECT field_key, value_text, source, updated_at FROM patient_field_values WHERE patient_id = ?", (patient_id,))
+    cur.execute("SELECT field_key, value_text, source, updated_at, source_doc_id FROM patient_field_values WHERE patient_id = ?", (patient_id,))
     rows = cur.fetchall()
-    return {k: {"value": v, "source": s, "updated_at": u} for (k, v, s, u) in rows}
+    return {k: {"value": v, "source": s, "updated_at": u, "source_doc_id": d} for (k, v, s, u, d) in rows}
+
+def log_transaction(conn, patient_id, field_key, old_val, new_val, source):
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO transaction_log (patient_id, field_key, old_value_text, new_value_text, source, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            (patient_id, field_key, old_val, new_val, source, _now_ts())
+        )
+    except Exception:
+        pass  # Table might not exist yet
+
 
 def upsert_patient_field_value(conn, patient_id, field_key, value_text, source="user"):
     cur = conn.cursor()
-    cur.execute("INSERT INTO patient_field_values (patient_id, field_key, value_text, source, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(patient_id, field_key) DO UPDATE SET value_text=excluded.value_text, source=excluded.source, updated_at=excluded.updated_at", 
+    # Get old value for transaction log
+    cur.execute("SELECT value_text FROM patient_field_values WHERE patient_id=? AND field_key=?", (patient_id, field_key))
+    row = cur.fetchone()
+    old_val = row[0] if row else None
+
+    if old_val != value_text:
+        log_transaction(conn, patient_id, field_key, old_val, value_text, source)
+
+    cur.execute("INSERT INTO patient_field_values (patient_id, field_key, value_text, source, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(patient_id, field_key) DO UPDATE SET value_text=excluded.value_text, source=excluded.source, updated_at=excluded.updated_at",
                 (patient_id, field_key, value_text, source, _now_ts()))
     conn.commit()
 

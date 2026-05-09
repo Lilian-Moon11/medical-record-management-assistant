@@ -33,6 +33,11 @@ from __future__ import annotations
 from typing import Optional, Any
 import os
 import shutil
+import threading
+
+# Lock protecting the extraction-active flag so clear_session and
+# the background ingestion thread coordinate safely.
+_extraction_lock = threading.Lock()
 
 
 class MRMAState:
@@ -64,14 +69,25 @@ def set_unlocked_session(page, *, conn, dmk_raw: bytes, db_path: str, password: 
 
 
 def clear_session(page) -> None:
-    # Close DB connection
-    try:
-        if getattr(page, "db_connection", None):
-            page.db_connection.close()
-    except Exception:
-        pass
+    """Clear sensitive state.  If an extraction is running, defer the DB
+    connection close until the extraction thread calls finish_deferred_cleanup()."""
+    deferred = False
+    with _extraction_lock:
+        if getattr(page.mrma, "_extraction_active", False):
+            # Extraction still running — keep the connection alive for the thread.
+            # Store the connection so finish_deferred_cleanup can close it later.
+            page.mrma._deferred_conn = page.db_connection
+            deferred = True
 
-    # Clear sensitive state
+    if not deferred:
+        # Close DB connection immediately
+        try:
+            if getattr(page, "db_connection", None):
+                page.db_connection.close()
+        except Exception:
+            pass
+
+    # Clear sensitive state from page regardless
     page.db_connection = None
     page.current_profile = None
     page.db_key_raw = None
@@ -88,11 +104,38 @@ def clear_session(page) -> None:
         page.overlay.clear()
     except Exception:
         pass
+    old_mrma = page.mrma
     page.mrma = MRMAState()
+    # Carry over deferred state if extraction is still running
+    if deferred:
+        page.mrma._extraction_active = True
+        page.mrma._deferred_conn = old_mrma._deferred_conn
 
 
 def is_unlocked(page) -> bool:
     return bool(getattr(page, "db_connection", None))
+
+
+def mark_extraction_active(page) -> None:
+    """Called by the ingestion thread at start."""
+    with _extraction_lock:
+        page.mrma._extraction_active = True
+
+
+def mark_extraction_done(page) -> None:
+    """Called by the ingestion thread at end.  Closes the DB connection if
+    a logout happened while extraction was running."""
+    with _extraction_lock:
+        page.mrma._extraction_active = False
+        deferred_conn = getattr(page.mrma, "_deferred_conn", None)
+        page.mrma._deferred_conn = None
+
+    if deferred_conn:
+        try:
+            deferred_conn.close()
+        except Exception:
+            pass
+
 
 def clear_unlocked_session(page) -> None:
     # Backwards-compatible alias for login.py

@@ -27,6 +27,42 @@ RELATION_LIST = [
     "Other",
 ]
 
+# Map gendered/specific terms to generic relation categories
+_RELATION_NORMALIZE: dict[str, str] = {
+    "father":        "Parent",
+    "mother":        "Parent",
+    "dad":           "Parent",
+    "mom":           "Parent",
+    "brother":       "Sibling",
+    "sister":        "Sibling",
+    "half-brother":  "Half-Sibling",
+    "half brother":  "Half-Sibling",
+    "half-sister":   "Half-Sibling",
+    "half sister":   "Half-Sibling",
+    "grandfather":   "Grandparent",
+    "grandmother":   "Grandparent",
+    "grandpa":       "Grandparent",
+    "grandma":       "Grandparent",
+    "uncle":         "Parent's Sibling",
+    "aunt":          "Parent's Sibling",
+    "son":           "Child",
+    "daughter":      "Child",
+    "cousin":        "Other",
+    "nephew":        "Other",
+    "niece":         "Other",
+    "spouse":        "Other",
+    "husband":       "Other",
+    "wife":          "Other",
+    "partner":       "Other",
+}
+
+
+def normalize_relation(raw: str) -> str:
+    """Normalize a gendered/specific relation term to the generic category."""
+    stripped = raw.strip()
+    return _RELATION_NORMALIZE.get(stripped.lower(), stripped)
+
+
 FIRST_DEGREE = {"Parent", "Sibling", "Half-Sibling", "Child"}
 SECOND_DEGREE = {"Grandparent", "Parent's Sibling"}
 
@@ -65,8 +101,12 @@ def _group_by_relation(items: list[dict]) -> dict[str, list[tuple[str, list[dict
     unnamed_idx: dict[str, int] = defaultdict(int)
 
     for it in items:
-        rel  = (it.get("relation") or "Other").strip()
+        raw_rel = (it.get("relation") or "Other").strip()
+        rel = normalize_relation(raw_rel)
+        # Use original specific term (e.g. "Father") as name when no explicit name is given
         name = (it.get("name") or "").strip()
+        if not name and raw_rel.lower() != rel.lower():
+            name = raw_rel.title()  # "Father", "Mother", etc.
         if not name:
             idx  = unnamed_idx[rel]
             unnamed_idx[rel] += 1

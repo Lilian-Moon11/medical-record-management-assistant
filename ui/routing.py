@@ -122,14 +122,11 @@ def apply_settings(page, *, get_view_for_index):
 
         page.is_high_contrast = high_contrast
 
-        # Provenance columns in Health Record / Labs / Providers
-        page.mrma._show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
-        page.mrma._show_updated = get_setting(page.db_connection, "ui.show_updated", "0") == "1"
 
         # Flush page-level changes (theme_mode, bgcolor, theme) first.
         page.update()
 
-        # Rebuild the current view so scale/source/updated columns reflect new state.
+        # Rebuild the current view so scale reflects new state.
         if getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
             idx = page.nav_rail.selected_index
             page.content_area.content = get_view_for_index(idx)

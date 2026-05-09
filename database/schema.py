@@ -61,8 +61,19 @@ def _ensure_schema(conn):
         )
     """)
 
-
-
+    # ── Phase 5.3: Transaction log for tracking field changes ─────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS transaction_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            field_key TEXT NOT NULL,
+            old_value_text TEXT,
+            new_value_text TEXT,
+            source TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY(patient_id) REFERENCES patients(id)
+        )
+    """)
     # ── Phase 5.1: AI suggestion review inbox ─────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS ai_extraction_inbox (
@@ -79,6 +90,19 @@ def _ensure_schema(conn):
             UNIQUE(patient_id, field_key, suggested_value),
             FOREIGN KEY(patient_id) REFERENCES patients(id),
             FOREIGN KEY(doc_id)     REFERENCES documents(id)
+        )
+    """)
+
+    # ── Phase 5.2: Chunk-level extraction cache for resumability ──────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ai_chunk_cache (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id      INTEGER NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            candidates  TEXT,
+            created_at  TEXT,
+            UNIQUE(doc_id, chunk_index),
+            FOREIGN KEY(doc_id) REFERENCES documents(id)
         )
     """)
 
@@ -100,6 +124,14 @@ def _ensure_schema(conn):
         except Exception:
             pass  # column already exists
 
+    # ── Migration: clear stale "Normal"/"Abnormal" flags with no ref range ──
+    cur.execute("""
+        UPDATE lab_results SET abnormal_flag = NULL
+        WHERE LOWER(abnormal_flag) IN ('normal', 'abnormal', 'n')
+          AND (ref_range_text IS NULL OR ref_range_text = '')
+          AND ref_low IS NULL AND ref_high IS NULL
+    """)
+
     # ── Seed default field definitions ────────────────────────────────────────
     defaults = [
         ("patient.phone",                   "Phone",                      "phone",  "Demographics", 0),
@@ -110,6 +142,9 @@ def _ensure_schema(conn):
         ("insurance.list",                  "Insurance Plans (JSON)",     "json",   "Insurance",    0),
         ("immunization.list",               "Immunizations (JSON)",       "json",   "Immunizations",0),
         ("family_history.list",             "Family History (JSON)",      "json",   "Family History",0),
+        ("conditions.list",                 "Conditions (JSON)",          "json",   "Conditions",   0),
+        ("procedures.list",                 "Procedures (JSON)",          "json",   "Procedures",   0),
+        ("social_history.list",             "Social History (JSON)",      "json",   "Social History",0),
     ]
     for k, label, dt, cat, sens in defaults:
         ensure_field_definition(conn, k, label, dt, cat, sens, commit=False)

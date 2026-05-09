@@ -78,7 +78,7 @@ def apply_suggestion(conn, patient_id: int, s: dict):
         if not report_id:
             import datetime
             today = datetime.date.today().isoformat()
-            report_id = create_lab_report(conn, patient_id, source_document_id=doc_id, collected_date=today, reported_date=today, notes="AI Extracted")
+            report_id = create_lab_report(conn, patient_id, source_document_id=doc_id, collected_date=today, reported_date=today, notes=s.get("source_file_name", "AI Extracted"))
             
         try:
             val_obj = json.loads(s["suggested_value"])
@@ -117,15 +117,17 @@ def apply_suggestion(conn, patient_id: int, s: dict):
         "condition.name": ("conditions.list", "name"),
         "medication.name": ("medicationstatement.current_list", "name"),
         "surgery.name": ("procedures.list", "name"),
-        "allergyintolerance.list": ("allergyintolerance.list", "substance")
+        "allergyintolerance.list": ("allergyintolerance.list", "substance"),
+        "patient.name": ("core.name", None),
+        "patient.dob": ("core.dob", None),
     }
     
     if s["field_key"] in key_map:
         target_list, target_prop = key_map[s["field_key"]]
         s["field_key"] = target_list
         
-        # Only rewrite the value if it's not already serialized JSON
-        if not str(s["suggested_value"]).strip().startswith("{"):
+        # Only rewrite the value if it's not already serialized JSON and we have a target prop
+        if target_prop is not None and not str(s["suggested_value"]).strip().startswith("{"):
             s["suggested_value"] = json.dumps({target_prop: s["suggested_value"]})
 
     cur = conn.cursor()
@@ -152,17 +154,39 @@ def apply_suggestion(conn, patient_id: int, s: dict):
         except Exception as ex:
             new_val_obj = {"value": s["suggested_value"], "_ai_source": s["source_file_name"]}
             
+        if "conditions" in s["field_key"] and isinstance(new_val_obj, dict):
+            if new_val_obj.get("onset_date") and not new_val_obj.get("diagnosis_date"):
+                new_val_obj["diagnosis_date"] = new_val_obj.get("onset_date")
+            
         # Merge/Update logic for lists: avoid duplicates if names match
         updated = False
         if isinstance(new_val_obj, dict):
             pk = "name"
             if "allergy" in s["field_key"]: pk = "substance"
-            if "insurance" in s["field_key"]: pk = "provider"
+            if "insurance" in s["field_key"]: pk = "payer"
+            if "social_history" in s["field_key"]: pk = "topic"
+            if "immunization" in s["field_key"]: pk = "immunization"
+            if "family_history" in s["field_key"]: pk = "condition"
             
             new_name = str(new_val_obj.get(pk, "")).strip().lower()
             if new_name:
+                import re as _re
+                def _fuzzy_normalize(n):
+                    """Normalize for fuzzy matching: strip parens, hyphens, extra spaces."""
+                    n = _re.sub(r'\s*\(.*?\)', '', n)  # strip parentheticals
+                    n = _re.sub(r'[-_]', ' ', n)        # hyphens to spaces
+                    n = _re.sub(r'\s+', ' ', n)          # collapse spaces
+                    return n.strip().lower()
+
+                new_name_norm = _fuzzy_normalize(new_name)
+
                 for i, ex_item in enumerate(current_list):
-                    if isinstance(ex_item, dict) and str(ex_item.get(pk, "")).strip().lower() == new_name:
+                    if not isinstance(ex_item, dict):
+                        continue
+                    ex_name = str(ex_item.get(pk, "")).strip().lower()
+                    ex_name_norm = _fuzzy_normalize(ex_name)
+                    # Match on exact OR fuzzy-normalized name
+                    if ex_name == new_name or ex_name_norm == new_name_norm:
                         # Ensure we don't lose user's existing data if AI didn't return it
                         merged = dict(ex_item)
                         for k, v in new_val_obj.items():
@@ -213,6 +237,16 @@ def apply_suggestion(conn, patient_id: int, s: dict):
             """,
             (patient_id, s["field_key"], final_str, s.get("doc_id"), s["confidence"], now_str) 
         )
+        
+        # Sync core identity fields directly back to the patients table
+        if s["field_key"] in ("core.name", "core.dob"):
+            from database import get_profile, update_profile
+            p = get_profile(conn)
+            if p:
+                new_name = final_str if s["field_key"] == "core.name" else p[1]
+                new_dob = final_str if s["field_key"] == "core.dob" else p[2]
+                update_profile(conn, patient_id, new_name, new_dob, p[3])
+                
     conn.commit()
 
 def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
@@ -228,10 +262,13 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
         page.mrma._ai_review_list_view = ft.ListView(spacing=15, padding=10, expand=True, auto_scroll=False)
     list_view = page.mrma._ai_review_list_view
     
+    if not hasattr(page.mrma, "_ai_review_title_text"):
+        page.mrma._ai_review_title_text = ft.Text("Review Extraction Suggestions", weight="bold")
+        
     if not hasattr(page.mrma, "_ai_review_dlg"):
         page.mrma._ai_review_dlg = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Review Extraction Suggestions", weight="bold"),
+            title=ft.Semantics(header=True, content=page.mrma._ai_review_title_text),
             content=ft.Container(
                 width=600,
                 height=400,
@@ -242,6 +279,7 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
         append_dialog(page, page.mrma._ai_review_dlg)
 
     dlg = page.mrma._ai_review_dlg
+    title_text = page.mrma._ai_review_title_text
 
     def _close(_e=None):
         dlg.open = False
@@ -255,6 +293,18 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
     dlg.actions = [ft.TextButton("Close", on_click=_close)]
     dlg.on_dismiss = _close
     
+    def _update_badge():
+        """Immediately refresh the overview suggestion count badge."""
+        try:
+            refresh_fn = getattr(page.mrma, "_refresh_overview_review_btn", None)
+            if refresh_fn:
+                print("Calling refresh_fn!")
+                refresh_fn()
+            else:
+                print("refresh_fn not found!")
+        except Exception as e:
+            print(f"Error in _update_badge: {e}")
+
     def refresh_list():
         list_view.controls.clear()
         remaining = fetch_pending_suggestions(conn, patient_id)
@@ -262,16 +312,30 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
             _close(None)
             return
             
+        title_text.value = f"Review Extraction Suggestions ({len(remaining)} left)"
+        try:
+            title_text.update()
+        except Exception:
+            pass
+            
         for s in remaining:
             def accept_click(e, sg=s):
                 apply_suggestion(conn, patient_id, sg)
                 mark_suggestion(conn, sg["id"], "accepted")
+                
+                # Sync Flet's current profile memory to match the database update
+                if sg["field_key"] in ("core.name", "core.dob"):
+                    from database import get_profile
+                    page.current_profile = get_profile(conn)
+                    
                 show_snack(page, f"Accepted {sg['field_key']}", "green")
+                _update_badge()
                 refresh_list()
                 
             def reject_click(e, sg=s):
                 mark_suggestion(conn, sg["id"], "rejected")
                 show_snack(page, f"Rejected {sg['field_key']}", "orange")
+                _update_badge()
                 refresh_list()
 
             # 1. Human-Readable formatting for JSON payload
@@ -318,18 +382,18 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
                     refresh_list()
 
                 warning_item = ft.Container(
-                    bgcolor=ft.Colors.AMBER_50,
+                    bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.AMBER),
                     border=ft.border.all(1, ft.Colors.AMBER_400),
                     border_radius=8,
                     padding=10,
                     content=ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.AMBER_800),
-                            ft.Text("Document Quality Notice", weight="bold", color=ft.Colors.AMBER_900),
+                            ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.AMBER),
+                            ft.Text("Document Quality Notice", weight="bold", color=ft.Colors.AMBER),
                             ft.Container(expand=True),
-                            ft.Text(f"Source: {s['source_file_name']}", color=ft.Colors.GREY_600, size=pt_scale(page, 12)),
+                            ft.Text(f"Source: {s['source_file_name']}", color=ft.Colors.ON_SURFACE_VARIANT, size=pt_scale(page, 12)),
                         ]),
-                        ft.Text(s["suggested_value"], size=pt_scale(page, 13), color=ft.Colors.AMBER_900),
+                        ft.Text(s["suggested_value"], size=pt_scale(page, 13), color=ft.Colors.AMBER),
                         ft.Row([
                             ft.TextButton("Dismiss", on_click=dismiss_click),
                         ], alignment=ft.MainAxisAlignment.END),
@@ -364,13 +428,13 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
                 conflict_warning = ft.Container(
                     content=ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.DEEP_ORANGE_900),
-                            ft.Text("Conflict with your existing data:", color=ft.Colors.DEEP_ORANGE_900, weight="bold", size=pt_scale(page, 12))
+                            ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.DEEP_ORANGE),
+                            ft.Text("Conflict with your existing data:", color=ft.Colors.DEEP_ORANGE, weight="bold", size=pt_scale(page, 12))
                         ]),
-                        ft.Text(f"Your current record: {existing_display}", color=ft.Colors.DEEP_ORANGE_900, italic=True, size=pt_scale(page, 12)),
-                        ft.Text("Accept to use the AI suggestion, or Reject to keep yours.", color=ft.Colors.GREY_700, size=pt_scale(page, 11)),
+                        ft.Text(f"Your current record: {existing_display}", color=ft.Colors.DEEP_ORANGE, italic=True, size=pt_scale(page, 12)),
+                        ft.Text("Accept to use the AI suggestion, or Reject to keep yours.", color=ft.Colors.ON_SURFACE_VARIANT, size=pt_scale(page, 11)),
                     ], spacing=3),
-                    bgcolor=ft.Colors.ORANGE_50,
+                    bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.ORANGE),
                     padding=8,
                     border_radius=4,
                     margin=ft.margin.only(bottom=5)
@@ -397,13 +461,13 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
                             conflict_warning = ft.Container(
                                 content=ft.Column([
                                     ft.Row([
-                                        ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE_700),
-                                        ft.Text("New details found for this existing allergy:", color=ft.Colors.BLUE_700, weight="bold", size=pt_scale(page, 12))
+                                        ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE),
+                                        ft.Text("New details found for this existing allergy:", color=ft.Colors.BLUE, weight="bold", size=pt_scale(page, 12))
                                     ]),
-                                    *[ft.Text(f"  • {d}", color=ft.Colors.BLUE_700, size=pt_scale(page, 12)) for d in diffs],
-                                    ft.Text("Accept to enrich the existing record with this information.", color=ft.Colors.GREY_700, size=pt_scale(page, 11)),
+                                    *[ft.Text(f"  • {d}", color=ft.Colors.BLUE, size=pt_scale(page, 12)) for d in diffs],
+                                    ft.Text("Accept to enrich the existing record with this information.", color=ft.Colors.ON_SURFACE_VARIANT, size=pt_scale(page, 11)),
                                 ], spacing=3),
-                                bgcolor=ft.Colors.BLUE_50,
+                                bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.BLUE),
                                 padding=8,
                                 border_radius=4,
                                 margin=ft.margin.only(bottom=5)
@@ -432,13 +496,13 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
                             conflict_warning = ft.Container(
                                 content=ft.Column([
                                     ft.Row([
-                                        ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.DEEP_ORANGE_900),
-                                        ft.Text(f"Changes detected for {med_name}:", color=ft.Colors.DEEP_ORANGE_900, weight="bold", size=pt_scale(page, 12))
+                                        ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.DEEP_ORANGE),
+                                        ft.Text(f"Changes detected for {med_name}:", color=ft.Colors.DEEP_ORANGE, weight="bold", size=pt_scale(page, 12))
                                     ]),
-                                    *[ft.Text(f"  • {d}", color=ft.Colors.DEEP_ORANGE_900, size=pt_scale(page, 12)) for d in diffs],
-                                    ft.Text("Accept to update, or Reject to keep current values.", color=ft.Colors.GREY_700, size=pt_scale(page, 11)),
+                                    *[ft.Text(f"  • {d}", color=ft.Colors.DEEP_ORANGE, size=pt_scale(page, 12)) for d in diffs],
+                                    ft.Text("Accept to update, or Reject to keep current values.", color=ft.Colors.ON_SURFACE_VARIANT, size=pt_scale(page, 11)),
                                 ], spacing=3),
-                                bgcolor=ft.Colors.ORANGE_50,
+                                bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.ORANGE),
                                 padding=8,
                                 border_radius=4,
                                 margin=ft.margin.only(bottom=5)
@@ -450,17 +514,17 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
             friendly_name = s['field_key'].split('.')[0].replace("statement", "").replace("intolerance", "").title()
 
             item = ft.Container(
-                bgcolor=ft.Colors.GREY_50,
-                border=ft.border.all(1, ft.Colors.GREY_300),
+                bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+                border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
                 border_radius=8,
                 padding=10,
                 content=ft.Column([
                     ft.Row([
-                        ft.Text(f"Would you like to {action_verb.lower()} this {friendly_name} information?", weight="bold", color=ft.Colors.BLACK87),
+                        ft.Text(f"Would you like to {action_verb.lower()} this {friendly_name} information?", weight="bold"),
                         ft.Container(expand=True),
-                        ft.Text(f"Source: {s['source_file_name']}", color=ft.Colors.GREY_600, size=pt_scale(page, 12))
+                        ft.Text(f"Source: {s['source_file_name']}", color=ft.Colors.ON_SURFACE_VARIANT, size=pt_scale(page, 12))
                     ]),
-                    ft.Text(display_text, size=pt_scale(page, 15), color=ft.Colors.BLACK87),
+                    ft.Text(display_text, size=pt_scale(page, 15), selectable=True),
                     conflict_warning,
                     ft.Row([
                         ft.ElevatedButton("Reject", color="red", on_click=reject_click),

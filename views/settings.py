@@ -52,9 +52,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
     except ValueError:
         _lt_scale_val = 1.0
 
-    is_show_source = get_setting(page.db_connection, "ui.show_source", "0") == "1"
 
-    is_show_updated = get_setting(page.db_connection, "ui.show_updated", "0") == "1"
 
     # â”€â”€ Export My Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -142,7 +140,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                     page.update()
 
             page.mrma._unenc_dlg = ft.AlertDialog(
-                title=ft.Text("Unencrypted Export WARNING", color=ft.Colors.RED, weight="bold"),
+                title=ft.Semantics(header=True, content=ft.Text("Unencrypted Export WARNING", color=ft.Colors.RED, weight="bold")),
                 content=ft.Column([
                     ft.Text("You are about to export your medical records in plain text.", weight="bold"),
                     ft.Text("Anyone who accesses this file will be able to read all of your medical data!"),
@@ -292,17 +290,6 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         on_change=_save_scale,
     )
 
-    def _auto_save_source(e):
-        set_setting(page.db_connection, "ui.show_source", "1" if e.control.value else "0")
-        apply_settings_callback()
-
-    source_cb = ft.Checkbox(label="Show source of information", value=is_show_source, on_change=_auto_save_source)
-
-    def _auto_save_updated(e):
-        set_setting(page.db_connection, "ui.show_updated", "1" if e.control.value else "0")
-        apply_settings_callback()
-
-    updated_cb = ft.Checkbox(label="Show updated date", value=is_show_updated, on_change=_auto_save_updated)
 
     current_auto_lock = get_setting(page.db_connection, "ui.auto_lock_minutes", "15")
     def _save_auto_lock(e):
@@ -340,9 +327,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
         set_setting(page.db_connection, "ui.large_text", "1.0")
 
-        set_setting(page.db_connection, "ui.show_source", "0")
 
-        set_setting(page.db_connection, "ui.show_updated", "0")
         set_setting(page.db_connection, "ui.auto_lock_minutes", "15")
 
         # Reset Controls
@@ -353,8 +338,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
         lt_slider.value = 1.0
         _scale_label.value = "Text Scale: 100%"
-        source_cb.value = False
-        updated_cb.value = False
+
         auto_lock_field.value = "15"
         page.update()
 
@@ -507,7 +491,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
             page.mrma._new_rk_dlg = ft.AlertDialog(
                 modal=True,
-                title=ft.Text("New Recovery Key"),
+                title=ft.Semantics(header=True, content=ft.Text("New Recovery Key")),
                 content=ft.Column(
                     [
                         ft.Text(
@@ -616,7 +600,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
             page.mrma._rotate_rk_dlg = ft.AlertDialog(
                 modal=False,
-                title=ft.Text("Rotate recovery key?"),
+                title=ft.Semantics(header=True, content=ft.Text("Rotate recovery key?")),
                 content=ft.Column(
                     [
                         ft.Text(
@@ -713,7 +697,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
             page.mrma._wipe_dlg = ft.AlertDialog(
                 modal=True,
-                title=ft.Text("Shared Device Cleanup", color=ft.Colors.RED),
+                title=ft.Semantics(header=True, content=ft.Text("Shared Device Cleanup", color=ft.Colors.RED)),
                 content=ft.Column(
                     [
                         ft.Text("Please confirm you have exported a backup to your USB drive before doing this!"),
@@ -740,7 +724,6 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
         page.mrma._wipe_dlg.open = True
         page.update()
     _info_btn = make_info_button(page, "Settings", [
-        "\"Show source of information\" reveals which document or action produced each health record entry, with a hyperlink to the source document where available.",
         "The Auto-Lock timeout will lock your vault after a period of inactivity, requiring you to re-enter your password. Set to 0 to disable.",
         "\"Export My Data\" creates an encrypted backup zip protected by your vault password. You can import this on another device using \"Upload Existing Profile\" on the login screen.",
         "Check \"Save unencrypted data\" to export a plain-text ZIP with a readable PDF summary and your raw documents. This requires password confirmation for safety.",
@@ -771,10 +754,7 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 hc_switch,
                 _scale_label,
                 lt_slider,
-                ft.Row([
-                    source_cb,
-                    updated_cb,
-                ]),
+
                 ft.Container(height=pt_scale(page, 10)),
                 auto_lock_field,
                 ft.Container(height=pt_scale(page, 10)),

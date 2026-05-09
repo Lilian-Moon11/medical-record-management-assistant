@@ -122,11 +122,14 @@ def generate_summary_pdf(db_conn, patient_id, options=None):
         pdf.ln(5)
 
     # 6. Tables Helper (Meds/Conditions)
-    def draw_section_table(title, key, columns, filter_current=False):
+    def draw_section_table(title, key, columns, filter_current=False, filter_active=False):
         raw = (field_map.get(key, {}) or {}).get("value")
         items = json.loads(raw or "[]")
         if filter_current:
             items = [i for i in items if bool(i.get("is_current", False))]
+        if filter_active:
+            # Default to True if is_active is not present, for backwards compatibility
+            items = [i for i in items if bool(i.get("is_active", True))]
         
         if not items: return
 
@@ -154,7 +157,7 @@ def generate_summary_pdf(db_conn, patient_id, options=None):
     
     if options.get('conditions', True):
         draw_section_table("Active Conditions", "conditions.list", 
-                       [("name", "Condition"), ("onset_date", "Onset Date"), ("symptoms", "Symptoms")])
+                       [("name", "Condition"), ("onset_date", "Onset Date"), ("symptoms", "Symptoms")], filter_active=True)
 
     if options.get('procedures', True):
         draw_section_table("Surgeries / Procedures", "procedures.list",

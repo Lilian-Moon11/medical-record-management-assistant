@@ -133,7 +133,7 @@ def get_immunizations_view(page: ft.Page):
     if not hasattr(page.mrma, "_imm_dlg"):
         page.mrma._imm_dlg = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Immunization Record"),
+            title=ft.Semantics(header=True, content=ft.Text("Immunization Record")),
             content=ft.Container(
                 width=460,
                 content=ft.Column(
@@ -153,14 +153,14 @@ def get_immunizations_view(page: ft.Page):
     def _open_add(_=None):
         _edit_idx["value"] = None
         _clear_fields()
-        page.mrma._imm_dlg.title = ft.Text("Add Immunization")
+        page.mrma._imm_dlg.title = ft.Semantics(header=True, content=ft.Text("Add Immunization"))
         page.mrma._imm_dlg.open = True
         page.update()
 
     def _open_edit(idx: int):
         _edit_idx["value"] = idx
         _populate_fields(immunizations[idx])
-        page.mrma._imm_dlg.title = ft.Text("Edit Immunization")
+        page.mrma._imm_dlg.title = ft.Semantics(header=True, content=ft.Text("Edit Immunization"))
         page.mrma._imm_dlg.open = True
         page.update()
 
@@ -192,7 +192,7 @@ def get_immunizations_view(page: ft.Page):
 
         page.mrma._imm_del_dlg = ft.AlertDialog(
             modal=False,
-            title=ft.Text("Confirm Delete"),
+            title=ft.Semantics(header=True, content=ft.Text("Confirm Delete")),
             content=page.mrma._imm_del_text,
             actions=[
                 ft.TextButton("Cancel", on_click=_close),
@@ -215,26 +215,93 @@ def get_immunizations_view(page: ft.Page):
         dlg.open = True
         page.update()
 
+    def _open_info(idx: int):
+        v = immunizations[idx]
+        source = v.get("_source", "")
+        ai_source = v.get("_ai_source", "")
+        updated_at = v.get("_updated", "")
+        
+        if source == "ai" and ai_source:
+            def _open_ai_doc(e, fname=ai_source):
+                page.mrma._doc_search_term = fname
+                page.go("/documents")
+                
+            source_control = ft.Text(
+                spans=[
+                    ft.TextSpan("Source: ", style=ft.TextStyle(italic=True)),
+                    ft.TextSpan(
+                        ai_source,
+                        style=ft.TextStyle(color=ft.Colors.BLUE),
+                        on_click=_open_ai_doc,
+                    )
+                ],
+                tooltip=f"View source document: {ai_source}"
+            )
+        else:
+            source_control = ft.Text(f"Source: {(source or 'Manual entry').capitalize()}", italic=True)
+
+        def _close(e=None):
+            dlg.open = False
+            page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text(v.get("immunization", "Immunization"), weight="bold"),
+                ft.IconButton(ft.Icons.CLOSE, on_click=_close)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            content=ft.Column([
+                ft.Text(f"Date: {v.get('date', 'N/A')}"),
+                ft.Text(f"Lot #: {v.get('lot', 'N/A')}"),
+                ft.Text(f"Administered By: {v.get('administered_by', 'N/A')}"),
+                ft.Divider(),
+                ft.Text(f"Notes: {v.get('notes', 'None')}"),
+                ft.Divider(),
+                source_control,
+                ft.Text(f"Updated: {updated_at or 'Unknown'}", size=12, italic=True),
+            ], tight=True, scroll=True),
+            actions=[ft.FilledButton("Close", on_click=_close)],
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=_close
+        )
+        append_dialog(page, dlg)
+        dlg.open = True
+        page.update()
+
     # ── Table ───────────────────────────────────────────────────────────────
     rows: list[ft.DataRow] = []
     for i, v in enumerate(immunizations):
         idx = i  # capture
-        source = v.get("_source", "")
-        source_chip = ft.Container(
-            content=ft.Text("AI", size=9, color=ft.Colors.WHITE),
-            bgcolor=ft.Colors.BLUE_600,
-            border_radius=4,
-            padding=ft.padding.symmetric(horizontal=4, vertical=1),
-            tooltip=f"Extracted from: {v.get('_ai_source', 'document')}",
-            visible=source == "ai",
-        )
+
+        def edit_click(e, i=idx):
+            _open_edit(i)
+            
+        def _clickable(txt, is_bold=False):
+            return ft.Container(
+                content=ft.Text(txt, weight="w500" if is_bold else "normal"),
+                on_click=edit_click,
+                ink=True,
+                border_radius=4,
+                padding=ft.padding.symmetric(vertical=pt_scale(page, 8), horizontal=pt_scale(page, 4)),
+                expand=True
+            )
+
         rows.append(
             ft.DataRow(cells=[
-                ft.DataCell(ft.Row([ft.Text(v.get("immunization", ""), weight="w500"), source_chip], spacing=6)),
-                ft.DataCell(ft.Text(v.get("date", ""))),
-                ft.DataCell(ft.Text(v.get("lot", ""))),
-                ft.DataCell(ft.Text(v.get("administered_by", ""))),
-                ft.DataCell(ft.Text(v.get("notes", ""), max_lines=1)),
+                ft.DataCell(_clickable(v.get("immunization", ""), True)),
+                ft.DataCell(_clickable(v.get("date", ""))),
+                ft.DataCell(_clickable(v.get("lot", ""))),
+                ft.DataCell(_clickable(v.get("administered_by", ""))),
+                ft.DataCell(
+                    ft.Container(
+                        content=ft.Text(v.get("notes", ""), max_lines=1),
+                        on_click=edit_click,
+                        ink=True,
+                        border_radius=4,
+                        padding=ft.padding.symmetric(vertical=pt_scale(page, 8), horizontal=pt_scale(page, 4)),
+                        expand=True
+                    )
+                ),
+                ft.DataCell(ft.IconButton(icon=ft.Icons.INFO_OUTLINE, tooltip="View details", on_click=lambda e, i=idx: _open_info(i))),
                 ft.DataCell(ft.Row([
                     ft.IconButton(
                         ft.Icons.EDIT, icon_size=18, tooltip="Edit",
@@ -244,7 +311,7 @@ def get_immunizations_view(page: ft.Page):
                         ft.Icons.DELETE, icon_size=18, tooltip="Delete",
                         on_click=lambda e, i=idx: _delete(i),
                     ),
-                ], spacing=0)),
+                ], spacing=0, tight=True)),
             ])
         )
 
@@ -263,6 +330,7 @@ def get_immunizations_view(page: ft.Page):
             ft.DataColumn(ft.Text("Lot #")),
             ft.DataColumn(ft.Text("Administered By"),  on_sort=_on_sort),
             ft.DataColumn(ft.Text("Notes")),
+            ft.DataColumn(ft.Text("Info")),
             ft.DataColumn(ft.Text("Actions")),
         ],
         rows=rows,

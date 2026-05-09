@@ -17,11 +17,6 @@ def _ensure_sets(page: ft.Page) -> None:
     # Tracks the last state of a parent panel: {"section.demographics": True}
     if not hasattr(page.mrma, "_panel_vis"):
         page.mrma._panel_vis = {}
-    if not hasattr(page.mrma, "_show_source"):
-        page.mrma._show_source = False
-    if not hasattr(page.mrma, "_show_updated"):
-        page.mrma._show_updated = False
-
 def _safe_update(ctrl: Any) -> None:
     try:
         ctrl.update()

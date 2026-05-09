@@ -41,6 +41,72 @@ logger = logging.getLogger(__name__)
 def _now_ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
+def _tag_section_headers(text: str) -> str:
+    """Insert [SECTION: ...] tags before known document section headers.
+
+    Medical PDFs often have headers like "PATIENT", "GUARANTOR",
+    "EMERGENCY CONTACT" that separate logically distinct data.  When the
+    PDF is flattened to text, these headers look like any other line.
+    By tagging them, the LLM can distinguish patient addresses from
+    hospital/guarantor addresses, patient names from contact names, etc.
+    """
+    import re
+    # Patterns are case-insensitive, anchored to start of line (possibly
+    # after whitespace).  Each maps to a section label.
+    _SECTION_PATTERNS = [
+        # Patient demographics
+        (r'^\s*PATIENT\b', 'PATIENT DATA'),
+        (r'^\s*Patient\s+Demograph', 'PATIENT DATA'),
+        (r'^\s*Patient\s+D[ée]mographique', 'PATIENT DATA'),  # French
+
+        # Guarantor / billing (US variants + international)
+        (r'^\s*GUARANTOR\b', 'GUARANTOR / BILLING'),
+        (r'^\s*Responsible\s+Party', 'GUARANTOR / BILLING'),
+        (r'^\s*Billing\s+Information', 'GUARANTOR / BILLING'),
+        (r'^\s*Garant\b', 'GUARANTOR / BILLING'),  # French
+
+        # Emergency contact variants
+        (r'^\s*EMERGENCY\s+CONTACT', 'EMERGENCY CONTACT'),
+        (r'^\s*Next\s+of\s+Kin', 'EMERGENCY CONTACT'),  # UK/AU
+        (r'^\s*Primary\s+Contact', 'EMERGENCY CONTACT'),
+        (r'^\s*Kontaktperson', 'EMERGENCY CONTACT'),  # German/Scandinavian
+
+        # Insurance
+        (r'^\s*INSURANCE\b', 'INSURANCE'),
+        (r'^\s*Coverage\s+Information', 'INSURANCE'),
+
+        # Facility / hospital
+        (r'^\s*Facility\s+Information', 'FACILITY'),
+        (r'^\s*Hospital\s+Information', 'FACILITY'),
+        (r'^\s*Clinic\s+Information', 'FACILITY'),
+
+        # Footer / metadata
+        (r'^\s*Printed\s+by\b', 'DOCUMENT FOOTER'),
+        (r'^\s*Generated\s+by\b', 'DOCUMENT FOOTER'),
+
+        # Provider
+        (r'^\s*Referring\s+Physician', 'REFERRING PHYSICIAN'),
+        (r'^\s*Primary\s+Care\s+Provider', 'PRIMARY CARE PROVIDER'),
+        (r'^\s*Attending\s+Physician', 'ATTENDING PHYSICIAN'),
+        (r'^\s*Provider\s+Information', 'PROVIDER INFORMATION'),
+
+        # Encounter / visit
+        (r'^\s*Encounter\s+Information', 'ENCOUNTER'),
+        (r'^\s*Visit\s+Information', 'ENCOUNTER'),
+    ]
+
+    lines = text.split('\n')
+    tagged = []
+    for line in lines:
+        for pattern, label in _SECTION_PATTERNS:
+            if re.match(pattern, line, re.IGNORECASE):
+                tagged.append(f'[SECTION: {label}]')
+                break
+        tagged.append(line)
+    return '\n'.join(tagged)
+
+
+
 
 def _table_to_markdown(table: list[list]) -> str:
     """Convert a pdfplumber table (list of rows, each a list of cell strings) to Markdown."""
@@ -142,12 +208,39 @@ def _extract_text(file_bytes: bytes, file_name: str) -> list[tuple[int, str, lis
                         if md.strip():
                             parts.append(md)
 
-                # Extract non-table text
-                text = pg.extract_text() or ""
+                # Extract non-table text (exclude characters inside table regions
+                # to prevent the LLM from seeing table data twice — once as clean
+                # Markdown and once as scrambled flat text)
+                if tables:
+                    # Get bounding boxes for all detected tables
+                    table_objs = pg.find_tables()
+                    bboxes = [t.bbox for t in table_objs] if table_objs else []
+
+                    if bboxes:
+                        def _not_in_tables(obj):
+                            """Return True if obj centre is outside all table bboxes."""
+                            v_mid = (obj["top"] + obj["bottom"]) / 2
+                            h_mid = (obj["x0"] + obj["x1"]) / 2
+                            for x0, top, x1, bottom in bboxes:
+                                if h_mid >= x0 and h_mid < x1 and v_mid >= top and v_mid < bottom:
+                                    return False
+                            return True
+
+                        filtered_pg = pg.filter(_not_in_tables)
+                        text = filtered_pg.extract_text() or ""
+                    else:
+                        text = pg.extract_text() or ""
+                else:
+                    text = pg.extract_text() or ""
+
                 if text.strip():
                     parts.append(text)
 
                 page_text = "\n\n".join(parts)
+
+                # Tag section headers to help the LLM distinguish patient
+                # data from hospital/guarantor/footer data
+                page_text = _tag_section_headers(page_text)
 
                 # Quality flagging
                 try:
@@ -427,7 +520,8 @@ Document:
                         conn, 
                         patient_id, 
                         full_text, 
-                        file_name
+                        file_name,
+                        doc_id=doc["id"],
                     )
                     print(f"[AI-DIAG] Doc {doc['id']}: LLM returned {len(suggestions)} suggestions")
                     for s in suggestions:

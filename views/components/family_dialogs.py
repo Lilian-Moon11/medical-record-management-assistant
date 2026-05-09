@@ -128,8 +128,10 @@ def _ensure_detail_dialog(page: ft.Page, on_refresh):
 
     page.mrma._fh_detail_dlg = ft.AlertDialog(
         modal=False,
-        title=ft.Row([ft.Icon(ft.Icons.PERSON, color=ft.Colors.TEAL_400),
-                      page.mrma._fh_detail_relation], spacing=8),
+        title=ft.Row([
+            ft.Row([ft.Icon(ft.Icons.PERSON, color=ft.Colors.TEAL_400), page.mrma._fh_detail_relation], spacing=8),
+            ft.IconButton(ft.Icons.CLOSE, on_click=_close)
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         content=ft.Container(
             width=480,
             content=ft.Column(
@@ -246,9 +248,15 @@ def _ensure_add_dialog(page: ft.Page, on_refresh):
             import logging; logging.error("Family history add save error", exc_info=True)
             show_snack(page, f"Save error: {ex}", "red")
 
+    _name_tf.on_submit = _save
+    _cond_tf.on_submit = _save
+
     page.mrma._fh_add_dlg = ft.AlertDialog(
         modal=False,
-        title=ft.Text("Add Family Member"),
+        title=ft.Row([
+            ft.Text("Add Family Member"),
+            ft.IconButton(ft.Icons.CLOSE, on_click=_close)
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         content=ft.Container(
             width=480,
             content=ft.Column(

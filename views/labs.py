@@ -29,7 +29,6 @@ from utils.ui_helpers import OUTLINE_VARIANT, show_snack, themed_panel, pt_scale
 from database import (
     list_distinct_test_names,
     list_all_results_for_test,
-    get_document_metadata,
 )
 from views.components.lab_helpers import _flag_chip
 from views.components.lab_chart import build_lab_chart
@@ -69,8 +68,8 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     # Chart container & Callbacks
     # ----------------------------
-    CHART_H = pt_scale(page, 200)
-    chart_container = ft.Container(expand=True, height=CHART_H)
+    CHART_H = pt_scale(page, 220)
+    chart_container = ft.Container(height=CHART_H)
 
     def on_refresh(test_name=None):
         if test_name:
@@ -80,8 +79,7 @@ def get_labs_view(page: ft.Page):
 
     # Historical results table
     # ----------------------------
-    _show_source = bool(getattr(page.mrma, "_show_source", False))
-    _show_updated = bool(getattr(page.mrma, "_show_updated", False))
+    _show_notes = bool(getattr(page.mrma, "_show_notes", True))
 
     # ----------------------------
     # Sort handler for results table
@@ -102,13 +100,11 @@ def get_labs_view(page: ft.Page):
         ft.DataColumn(ft.Text("Unit"),    on_sort=_on_results_sort),
         ft.DataColumn(ft.Text("Flag"),    on_sort=_on_results_sort),
     ]
-    if _show_source:
-        results_cols.append(ft.DataColumn(ft.Text("Source")))
-    if _show_updated:
-        results_cols.append(ft.DataColumn(ft.Text("Updated")))
+    if _show_notes:
+        results_cols.append(ft.DataColumn(ft.Text("Notes"), on_sort=_on_results_sort))
     results_cols += [
         ft.DataColumn(ft.Text("Info")),
-        ft.DataColumn(ft.Text("Edit/Delete")),
+        ft.DataColumn(ft.Text("Actions")),
     ]
 
     results_table = ft.DataTable(
@@ -125,7 +121,7 @@ def get_labs_view(page: ft.Page):
         border_radius=8,
     )
 
-    results_container = ft.Container(content=results_table, expand=True)
+    results_container = ft.Container(content=results_table)
 
     # ----------------------------
     # Build historical table rows
@@ -158,26 +154,30 @@ def get_labs_view(page: ft.Page):
                 ru = ref_unit or unit or ""
                 rr = f"{lo}-{hi} {ru}".strip()
 
+            def _open_edit(e, xx=x):
+                open_edit_result(page, xx, patient_id, on_refresh)
+
+            def _clickable(content):
+                return ft.Container(
+                    content=content, 
+                    on_click=_open_edit, 
+                    ink=True, 
+                    padding=ft.padding.symmetric(vertical=pt_scale(page, 8))
+                )
+
             cells = [
-                        ft.DataCell(ft.Text(result_date)),
-                        ft.DataCell(ft.Text(value_text or "")),
-                        ft.DataCell(ft.Text(unit or "")),
-                        ft.DataCell(_flag_chip(flag)),
+                        ft.DataCell(_clickable(ft.Text(result_date))),
+                        ft.DataCell(_clickable(ft.Text(value_text or ""))),
+                        ft.DataCell(_clickable(ft.Text(unit or ""))),
+                        ft.DataCell(_clickable(_flag_chip(flag))),
             ]
-            if _show_source:
-                # Source: resolve document name or show "User"
-                src_doc_id = x[13]
-                if src_doc_id:
-                    try:
-                        dm = get_document_metadata(page.db_connection, int(src_doc_id))
-                        src_label = dm[0] if dm else f"Doc #{src_doc_id}"
-                    except Exception:
-                        src_label = f"Doc #{src_doc_id}"
-                else:
-                    src_label = "User"
-                cells.append(ft.DataCell(ft.Text(src_label)))
-            if _show_updated:
-                cells.append(ft.DataCell(ft.Text(x[16] or "")))
+            if _show_notes:
+                notes_text = x[11] or ""
+                # Truncate long notes for table display
+                display_notes = (notes_text[:40] + "…") if len(notes_text) > 40 else notes_text
+                cells.append(ft.DataCell(
+                    _clickable(ft.Text(display_notes, size=12, tooltip=notes_text if len(notes_text) > 40 else None))
+                ))
             cells += [
                         ft.DataCell(
                             ft.IconButton(
@@ -410,7 +410,7 @@ def get_labs_view(page: ft.Page):
             results_container,
         ],
         expand=True,
-        scroll=True,
+        scroll=ft.ScrollMode.AUTO,
         spacing=10,
     )
 
@@ -471,7 +471,7 @@ def get_labs_view(page: ft.Page):
         "Click a column header in the Historical Test Table to sort results. Click the Info icon on any row to see full details including notes and reference ranges.",
     ])
 
-    return themed_panel(
+    panel = themed_panel(
         page,
         ft.Column(
             [
@@ -486,3 +486,5 @@ def get_labs_view(page: ft.Page):
         padding=pt_scale(page, 10),
         radius=10,
     )
+    panel.expand = True
+    return panel

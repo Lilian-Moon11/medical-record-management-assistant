@@ -114,7 +114,7 @@ def get_documents_view(page: ft.Page):
     if not hasattr(page.mrma, "_delete_dlg") or page.mrma._delete_dlg is None:
         page.mrma._delete_dlg = ft.AlertDialog(
             modal=False,
-            title=ft.Text("Confirm Delete"),
+            title=ft.Semantics(header=True, content=ft.Text("Confirm Delete")),
             content=ft.Text(""),
             actions=[
                 ft.ElevatedButton("Cancel", on_click=close_delete_dlg),
@@ -226,7 +226,7 @@ def get_documents_view(page: ft.Page):
         page.mrma._pending_delete = (int(doc_id), str(name))
 
         dlg = page.mrma._delete_dlg
-        dlg.title = ft.Text("Confirm Delete")
+        dlg.title = ft.Semantics(header=True, content=ft.Text("Confirm Delete"))
         dlg.content = ft.Text(
             f"Permanently delete '{name}'?\n\n"
             "This removes it from the app and deletes the file from disk."
@@ -379,32 +379,40 @@ def get_documents_view(page: ft.Page):
             # Run ingestion + candidate matching in background
             _uploaded_doc_id = doc_id
             _uploaded_file_name = file_name
+
+            # Capture connection and keys as local variables BEFORE the thread
+            # starts, so auto-lock clearing page attributes won't break extraction.
+            _conn = page.db_connection
+            _dmk_raw = page.db_key_raw
+
             def _ingest():
+                from core.app_state import mark_extraction_active, mark_extraction_done
+                mark_extraction_active(page)
                 try:
                     run_ingestion(
-                        page.db_connection,
-                        page.db_key_raw,
+                        _conn,
+                        _dmk_raw,
                         patient_id,
                         str(paths.data_dir),
                     )
-                    show_snack(page, "AI Extraction Complete! Check your Dashboard.", "green")
 
-                    # Refresh the review button in-place on whatever tab is active.
-                    # If Overview is showing, update its live button directly.
-                    if hasattr(page.mrma, "_refresh_overview_review_btn"):
-                        try:
-                            page.mrma._refresh_overview_review_btn()
-                        except Exception:
-                            pass
-                    # If user is on a different tab, rebuild that tab so its badge appears too.
-                    if hasattr(page.mrma, "_get_view_for_index") and getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
-                        try:
-                            idx = page.nav_rail.selected_index
-                            if idx != 0:  # Overview already updated itself above
-                                page.content_area.content = page.mrma._get_view_for_index(idx)
-                                page.content_area.update()
-                        except Exception as refresh_ex:
-                            logger.debug("Auto-refresh failed: %s", refresh_ex)
+                    # Only update UI if the session is still active (user hasn't locked out)
+                    if getattr(page, "db_connection", None):
+                        show_snack(page, "AI Extraction Complete! Check your Dashboard.", "green")
+
+                        if hasattr(page.mrma, "_refresh_overview_review_btn"):
+                            try:
+                                page.mrma._refresh_overview_review_btn()
+                            except Exception:
+                                pass
+                        if hasattr(page.mrma, "_get_view_for_index") and getattr(page, "nav_rail", None) and getattr(page, "content_area", None):
+                            try:
+                                idx = page.nav_rail.selected_index
+                                if idx != 0:
+                                    page.content_area.content = page.mrma._get_view_for_index(idx)
+                                    page.content_area.update()
+                            except Exception as refresh_ex:
+                                logger.debug("Auto-refresh failed: %s", refresh_ex)
 
                 except Exception as ex:
                     logger.error("Ingestion error: %s", ex)
@@ -412,7 +420,7 @@ def get_documents_view(page: ft.Page):
                 # ── Candidate matching for records requests ───────────────────
                 try:
                     from database.records_requests import check_upload_for_matches
-                    cur = page.db_connection.cursor()
+                    cur = _conn.cursor()
                     cur.execute(
                         "SELECT parsed_text FROM documents WHERE id=?",
                         (_uploaded_doc_id,),
@@ -420,19 +428,22 @@ def get_documents_view(page: ft.Page):
                     row = cur.fetchone()
                     parsed_text = row[0] if row else None
                     matched = check_upload_for_matches(
-                        page.db_connection,
+                        _conn,
                         patient_id,
                         doc_id=_uploaded_doc_id,
                         file_name=_uploaded_file_name,
                         parsed_text=parsed_text,
                     )
-                    if matched and hasattr(page.mrma, "_refresh_requests_panel"):
-                        try:
-                            page.mrma._refresh_requests_panel()
-                        except Exception:
-                            pass
+                    if matched and getattr(page, "db_connection", None):
+                        if hasattr(page.mrma, "_refresh_requests_panel"):
+                            try:
+                                page.mrma._refresh_requests_panel()
+                            except Exception:
+                                pass
                 except Exception as match_ex:
                     logger.debug("Candidate match error: %s", match_ex)
+                finally:
+                    mark_extraction_done(page)
 
             threading.Thread(target=_ingest, daemon=True).start()
 

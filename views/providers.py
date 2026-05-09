@@ -45,22 +45,13 @@ def get_providers_view(page: ft.Page):
     # ----------------------------
     # Table (created early so funcs can reference it)
     # ----------------------------
-    _show_source = True
-    _show_updated = bool(getattr(page.mrma, "_show_updated", False))
-
     prov_cols = [
         ft.DataColumn(ft.Text("Name")),
         ft.DataColumn(ft.Text("Specialty")),
         ft.DataColumn(ft.Text("Clinic")),
         ft.DataColumn(ft.Text("Phone")),
-    ]
-    if _show_source:
-        prov_cols.append(ft.DataColumn(ft.Text("Source")))
-    if _show_updated:
-        prov_cols.append(ft.DataColumn(ft.Text("Updated")))
-    prov_cols += [
-        ft.DataColumn(ft.Text("Edit")),
-        ft.DataColumn(ft.Text("Delete")),
+        ft.DataColumn(ft.Text("Info")),
+        ft.DataColumn(ft.Text("Actions")),
     ]
 
     # ---- Sort state (nonlocal, like documents.py) ----
@@ -109,74 +100,51 @@ def get_providers_view(page: ft.Page):
             # r: (id, name, specialty, clinic, phone, fax, email, address, notes, source, source_file_name, created_at, updated_at)
             pid, name, specialty, clinic, phone, _fax, _email, _addr, _notes, source, source_file_name, _c, _u = r
 
-            cells = [
-                        ft.DataCell(ft.Text(name or "")),
-                        ft.DataCell(ft.Text(specialty or "")),
-                        ft.DataCell(ft.Text(clinic or "")),
-                        ft.DataCell(ft.Text(phone or "")),
-            ]
-            if _show_source:
-                if (source or "").lower() == "ai" and source_file_name:
-                    def _open_ai_doc(e, fname=source_file_name):
-                        import os, tempfile, time as _time
-                        from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
-                        from utils.open_file import open_file_cross_platform
-                        try:
-                            cur = page.db_connection.cursor()
-                            cur.execute(
-                                "SELECT file_path FROM documents WHERE patient_id=? AND file_name=? ORDER BY id DESC LIMIT 1",
-                                (patient_id, fname),
-                            )
-                            row = cur.fetchone()
-                            if not row or not row[0]:
-                                show_snack(page, "Source file not found.", "red")
-                                return
-                            from core.paths import resolve_doc_path
-                            resolved = str(resolve_doc_path(row[0]))
-                            if not os.path.exists(resolved):
-                                show_snack(page, "Source file not found.", "red")
-                                return
-                            fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
-                            with open(resolved, "rb") as f:
-                                ciphertext = f.read()
-                            plaintext = decrypt_bytes(fmk, ciphertext)
-                            _, ext = os.path.splitext(fname)
-                            tmp = os.path.join(tempfile.gettempdir(), f"mrma_dec_{int(_time.time())}{ext or '.pdf'}")
-                            with open(tmp, "wb") as f:
-                                f.write(plaintext)
-                            open_file_cross_platform(tmp)
-                            show_snack(page, f"Opened {fname}", "blue")
-                        except Exception as ex:
-                            show_snack(page, f"Open failed: {ex}", "red")
+            def edit_click(e, rr=r):
+                open_edit_provider(rr)
+                
+            def _clickable(txt):
+                return ft.Container(
+                    content=ft.Text(txt),
+                    on_click=edit_click,
+                    ink=True,
+                    border_radius=4,
+                    padding=ft.padding.symmetric(vertical=pt_scale(page, 8), horizontal=pt_scale(page, 4)),
+                    expand=True
+                )
 
-                    cells.append(ft.DataCell(
-                        ft.TextButton(
-                            source_file_name,
-                            on_click=_open_ai_doc,
-                            tooltip="Open source document",
-                            style=ft.ButtonStyle(color=ft.Colors.BLUE, padding=0),
-                        )
-                    ))
-                else:
-                    cells.append(ft.DataCell(ft.Text(source.capitalize() if source else "User")))
-            if _show_updated:
-                cells.append(ft.DataCell(ft.Text(_u or "")))
-            cells += [
-                        ft.DataCell(
+            cells = [
+                ft.DataCell(_clickable(name or "")),
+                ft.DataCell(_clickable(specialty or "")),
+                ft.DataCell(_clickable(clinic or "")),
+                ft.DataCell(_clickable(phone or "")),
+            ]
+
+            def info_click(e, rr=r):
+                open_info_provider(rr)
+
+            cells.append(ft.DataCell(ft.IconButton(icon=ft.Icons.INFO_OUTLINE, tooltip="View details", on_click=info_click)))
+
+            cells.append(
+                ft.DataCell(
+                    ft.Row(
+                        [
                             ft.IconButton(
                                 icon=ft.Icons.EDIT,
                                 tooltip="Edit provider",
                                 on_click=lambda e, rr=r: open_edit_provider(rr),
-                            )
-                        ),
-                        ft.DataCell(
+                            ),
                             ft.IconButton(
                                 icon=ft.Icons.DELETE,
                                 tooltip="Delete provider",
                                 on_click=lambda e, pid=int(pid), nm=(name or ""): open_delete_provider(pid, nm),
-                            )
-                        ),
-            ]
+                            ),
+                        ],
+                        tight=True,
+                        spacing=0,
+                    )
+                )
+            )
 
             table.rows.append(
                 ft.DataRow(cells=cells)
@@ -317,7 +285,7 @@ def get_providers_view(page: ft.Page):
 
         page.mrma._provider_edit_dlg = ft.AlertDialog(
             modal=False,
-            title=ft.Text("Provider"),
+            title=ft.Semantics(header=True, content=ft.Text("Provider")),
             content=ft.Container(
                 width=pt_scale(page, 520),
                 content=ft.Column(
@@ -348,7 +316,7 @@ def get_providers_view(page: ft.Page):
     def open_new_provider(_=None):
         page.mrma._editing_provider_id = None
         dlg = _ensure_provider_edit_dialog()
-        dlg.title = ft.Text("Add Provider")
+        dlg.title = ft.Semantics(header=True, content=ft.Text("Add Provider"))
 
         page.mrma._prov_name.value = ""
         page.mrma._prov_specialty.value = ""
@@ -367,7 +335,7 @@ def get_providers_view(page: ft.Page):
 
         page.mrma._editing_provider_id = int(pid)
         dlg = _ensure_provider_edit_dialog()
-        dlg.title = ft.Text("Edit Provider")
+        dlg.title = ft.Semantics(header=True, content=ft.Text("Edit Provider"))
 
         page.mrma._prov_name.value = name or ""
         page.mrma._prov_specialty.value = specialty or ""
@@ -378,6 +346,58 @@ def get_providers_view(page: ft.Page):
         page.mrma._prov_address.value = address or ""
         page.mrma._prov_notes.value = notes or ""
 
+        dlg.open = True
+        page.update()
+
+    def open_info_provider(r):
+        pid, name, specialty, clinic, phone, fax, email, address, notes, source, source_file_name, _c, _u = r
+
+        if (source or "").lower() == "ai" and source_file_name:
+            def _open_ai_doc(e, fname=source_file_name):
+                page.mrma._doc_search_term = fname
+                page.go("/documents")
+                
+            source_control = ft.Text(
+                spans=[
+                    ft.TextSpan("Source: ", style=ft.TextStyle(italic=True)),
+                    ft.TextSpan(
+                        source_file_name,
+                        style=ft.TextStyle(color=ft.Colors.BLUE),
+                        on_click=_open_ai_doc,
+                    )
+                ],
+                tooltip=f"View source document: {source_file_name}"
+            )
+        else:
+            source_control = ft.Text(f"Source: {(source or 'Manual entry').capitalize()}", italic=True)
+
+        def _close(e=None):
+            dlg.open = False
+            page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text(name or "Provider", weight="bold"),
+                ft.IconButton(ft.Icons.CLOSE, on_click=_close)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            content=ft.Column([
+                ft.Text(f"Specialty: {specialty or 'N/A'}"),
+                ft.Text(f"Clinic: {clinic or 'N/A'}"),
+                ft.Text(f"Phone: {phone or 'N/A'}"),
+                ft.Text(f"Fax: {fax or 'N/A'}"),
+                ft.Text(f"Email: {email or 'N/A'}"),
+                ft.Text(f"Address: {address or 'N/A'}"),
+                ft.Divider(),
+                ft.Text(f"Notes: {notes or 'None'}"),
+                ft.Divider(),
+                source_control,
+                ft.Text(f"Updated: {_u or 'Unknown'}", size=12, italic=True),
+            ], tight=True, scroll=True),
+            actions=[ft.FilledButton("Close", on_click=_close)],
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=_close
+        )
+        append_dialog(page, dlg)
         dlg.open = True
         page.update()
 
@@ -416,7 +436,7 @@ def get_providers_view(page: ft.Page):
 
         page.mrma._provider_delete_dlg = ft.AlertDialog(
             modal=False,
-            title=ft.Text("Confirm Delete"),
+            title=ft.Semantics(header=True, content=ft.Text("Confirm Delete")),
             content=page.mrma._provider_delete_text,
             actions=[
                 ft.TextButton("Cancel", on_click=_close),

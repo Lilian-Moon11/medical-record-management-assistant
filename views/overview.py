@@ -469,7 +469,11 @@ def _build_requests_panel(page: ft.Page, patient_id: int) -> ft.Column:
 
     header = ft.Row(
         [
-            ft.Text("Records Requests", weight="bold", size=pt_scale(page, 16)),
+            ft.Semantics(
+                header=True,
+                heading_level=2,
+                content=ft.Text("Records Requests", weight="bold", size=pt_scale(page, 16)),
+            ),
             ft.Container(expand=True),
             ft.IconButton(
                 ft.Icons.ADD_CIRCLE_OUTLINE,
@@ -524,7 +528,11 @@ def get_overview_view(page: ft.Page):
         page,
         ft.Column([
             ft.Row([
-                ft.Text("Notes", weight="bold", size=pt_scale(page, 16)),
+                ft.Semantics(
+                    header=True,
+                    heading_level=2,
+                    content=ft.Text("Notes", weight="bold", size=pt_scale(page, 16)),
+                ),
                 ft.IconButton(ft.Icons.SAVE, tooltip="Save Notes", on_click=save_notes),
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             notes_input,
@@ -574,7 +582,7 @@ def get_overview_view(page: ft.Page):
 
         page.mrma._summary_options_dlg = ft.AlertDialog(
             modal=False,
-            title=ft.Text("Customize Summary", size=pt_scale(page, 18), weight="bold"),
+            title=ft.Semantics(header=True, content=ft.Text("Customize Summary", size=pt_scale(page, 18), weight="bold")),
             content=ft.Column([
                 ft.Text("Select the sections to include in the PDF:", size=pt_scale(page, 14)),
                 page.mrma._summary_opt_ins,
@@ -614,9 +622,9 @@ def get_overview_view(page: ft.Page):
         show_ai_review_dialog(page, patient_id, on_close=_refresh_review_btn)
 
     initial_count = _count_pending()
+    review_btn_text = ft.Text(f"Review Suggestions ({initial_count})" if initial_count > 0 else "Review Suggestions")
     review_btn = ft.FilledButton(
-        f"Review Suggestions ({initial_count})" if initial_count > 0 else "Review Suggestions",
-        icon=ft.Icons.NEW_RELEASES,
+        content=ft.Row([ft.Icon(ft.Icons.NEW_RELEASES), review_btn_text], alignment=ft.MainAxisAlignment.CENTER, spacing=5),
         style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE_600, color=ft.Colors.WHITE),
         on_click=_open_review,
         visible=initial_count > 0,
@@ -625,10 +633,12 @@ def get_overview_view(page: ft.Page):
 
     def _refresh_review_btn():
         count = _count_pending()
-        review_btn.text = f"Review Suggestions ({count})"
+        review_btn_text.value = f"Review Suggestions ({count})"
         review_btn.visible = count > 0
         try:
+            review_btn_text.update()
             review_btn.update()
+            page.update()
         except Exception:
             pass
 
@@ -646,12 +656,35 @@ def get_overview_view(page: ft.Page):
     ])
 
     # ── Header row (name, DOB, action buttons) ────────────────────────────────
+    # Try patients table first, then EAV field for AI-extracted name
+    display_name = (patient[1] or "").strip()
+    if not display_name:
+        from database import get_patient_field_map
+        fmap = get_patient_field_map(page.db_connection, patient_id)
+        ai_name = (fmap.get("core.name") or {}).get("value", "")
+        if ai_name and ai_name.strip():
+            display_name = ai_name.strip()
+            # Sync the name back to the patients table for consistency
+            try:
+                from database import update_profile, get_profile
+                update_profile(page.db_connection, patient_id, display_name, patient[2], patient[3])
+                page.current_profile = get_profile(page.db_connection)
+            except Exception:
+                pass
+    
+    display_name = display_name or "(No Name)"
+
     header_row = ft.Row(
         [
             ft.Icon(ft.Icons.ACCOUNT_CIRCLE, size=pt_scale(page, 52), color=ft.Colors.BLUE_GREY),
             ft.Column(
                 [
-                    ft.Text(patient[1], size=pt_scale(page, 24), weight="bold"),
+                    ft.Text(
+                        display_name, 
+                        size=pt_scale(page, 24), 
+                        weight="bold",
+                        semantics_label=display_name
+                    ),
                     ft.Text(f"DOB: {patient[2] or '(not set)'}", size=pt_scale(page, 13)),
                 ],
                 spacing=0,

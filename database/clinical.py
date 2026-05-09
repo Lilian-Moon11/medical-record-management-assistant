@@ -165,6 +165,58 @@ def delete_lab_result(conn, patient_id, result_id):
     conn.commit()
     return cur.rowcount
 
+
+def get_or_create_report_for_date(conn, patient_id, date_str):
+    """Find an existing lab_report with the given collected_date, or create one.
+
+    Returns the report_id (int).
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM lab_reports WHERE patient_id = ? AND collected_date = ? LIMIT 1",
+        (patient_id, date_str),
+    )
+    row = cur.fetchone()
+    if row:
+        return row[0]
+    # Create a new report for this date
+    now = _now_ts()
+    cur.execute(
+        "INSERT INTO lab_reports (patient_id, collected_date, reported_date, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (patient_id, date_str, date_str, now, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def cleanup_empty_reports(conn, patient_id):
+    """Delete any lab_reports that have zero child lab_results."""
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM lab_reports WHERE patient_id = ? "
+        "AND id NOT IN (SELECT DISTINCT report_id FROM lab_results WHERE patient_id = ?)",
+        (patient_id, patient_id),
+    )
+    deleted = cur.rowcount
+    if deleted:
+        conn.commit()
+    return deleted
+
+
+def list_test_names_for_date(conn, patient_id, date_str, category=None):
+    """Return distinct test names that have a result on the given date."""
+    cur = conn.cursor()
+    params = [patient_id, date_str]
+    sql = "SELECT DISTINCT test_name FROM lab_results WHERE patient_id = ? AND result_date = ?"
+    if category:
+        sql += " AND category = ?"
+        params.append(category)
+    sql += " ORDER BY test_name COLLATE NOCASE ASC"
+    cur.execute(sql, tuple(params))
+    return [row[0] for row in cur.fetchall()]
+
+
 # Test-centric queries (for Labs redesign)
 def list_distinct_test_names(conn, patient_id, search=None, category=None):
     """Return sorted unique test names across all lab_results for a patient."""

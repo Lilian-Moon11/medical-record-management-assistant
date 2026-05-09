@@ -398,7 +398,7 @@ def build_login_view(
 
                 _merge_dlg = ft.AlertDialog(
                     modal=True,
-                    title=ft.Text("Duplicate Patient Found"),
+                    title=ft.Semantics(header=True, content=ft.Text("Duplicate Patient Found")),
                     content=ft.Column([
                         ft.Text(
                             f"A patient matching '{', '.join(names)}' already exists "
@@ -488,7 +488,7 @@ def build_login_view(
 
     _import_pwd_dlg = ft.AlertDialog(
         modal=True,
-        title=ft.Text("Enter profile password"),
+        title=ft.Semantics(header=True, content=ft.Text("Enter profile password")),
         content=ft.Column(
             [
                 ft.Text(
