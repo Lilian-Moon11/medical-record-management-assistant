@@ -158,7 +158,7 @@ def get_providers_view(page: ft.Page):
         try:
             rows = list_providers(page.db_connection, patient_id, search=search_text, limit=500)
         except Exception as ex:
-            show_snack(page, f"Load failed: {ex}", "red")
+            show_snack(page, f"Load failed: {ex}", ft.Colors.RED)
             rows = []
 
         # Sort in-memory by selected column
@@ -240,7 +240,7 @@ def get_providers_view(page: ft.Page):
         def _save(_=None):
             name = (page.mrma._prov_name.value or "").strip()
             if not name:
-                show_snack(page, "Provider name is required.", "red")
+                show_snack(page, "Provider name is required.", ft.Colors.RED)
                 return
 
             try:
@@ -258,7 +258,7 @@ def get_providers_view(page: ft.Page):
                         address=(page.mrma._prov_address.value or "").strip() or None,
                         notes=(page.mrma._prov_notes.value or "").strip() or None,
                     )
-                    show_snack(page, "Provider added.", "blue")
+                    show_snack(page, "Provider added.", ft.Colors.BLUE)
                 else:
                     updated = update_provider(
                         page.db_connection,
@@ -274,14 +274,14 @@ def get_providers_view(page: ft.Page):
                         notes=(page.mrma._prov_notes.value or "").strip() or None,
                     )
                     if updated:
-                        show_snack(page, "Provider updated.", "blue")
+                        show_snack(page, "Provider updated.", ft.Colors.BLUE)
                     else:
-                        show_snack(page, "Provider not found.", "orange")
+                        show_snack(page, "Provider not found.", ft.Colors.ORANGE)
 
                 _close()
                 refresh_table(search_field.value)
             except Exception as ex:
-                show_snack(page, f"Save failed: {ex}", "red")
+                show_snack(page, f"Save failed: {ex}", ft.Colors.RED)
 
         page.mrma._provider_edit_dlg = ft.AlertDialog(
             modal=False,
@@ -428,11 +428,11 @@ def get_providers_view(page: ft.Page):
                 refresh_table(search_field.value)
 
                 if deleted:
-                    show_snack(page, "Provider deleted.", "blue")
+                    show_snack(page, "Provider deleted.", ft.Colors.BLUE)
                 else:
-                    show_snack(page, "Provider not found.", "orange")
+                    show_snack(page, "Provider not found.", ft.Colors.ORANGE)
             except Exception as ex:
-                show_snack(page, f"Delete failed: {ex}", "red")
+                show_snack(page, f"Delete failed: {ex}", ft.Colors.RED)
 
         page.mrma._provider_delete_dlg = ft.AlertDialog(
             modal=False,
@@ -463,7 +463,7 @@ def get_providers_view(page: ft.Page):
     try:
         initial_rows = list_providers(page.db_connection, patient_id, search="", limit=500)
     except Exception as ex:
-        show_snack(page, f"Load failed: {ex}", "red")
+        show_snack(page, f"Load failed: {ex}", ft.Colors.RED)
         initial_rows = []
     _build_rows(initial_rows)
 

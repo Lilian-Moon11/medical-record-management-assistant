@@ -174,7 +174,7 @@ def build_login_view(
                 password=pwd,
             )
             if not res.ok:
-                show_snack(page, res.user_message, "red")
+                show_snack(page, res.user_message, ft.Colors.RED)
                 logger.warning("Self-test failed during login: %s", res.dev_details)
 
                 try:
@@ -216,7 +216,7 @@ def build_login_view(
                 error_text.value = f"Login failed: {msg}"
                 error_text.visible = True
 
-            show_snack(page, f"Login failed: {ex}", "red")
+            show_snack(page, f"Login failed: {ex}", ft.Colors.RED)
             logger.warning("Login failed: %s", ex)
 
             # Always close the local conn if it exists
@@ -280,7 +280,7 @@ def build_login_view(
                 password=pwd,
             )
             if not res.ok:
-                show_snack(page, res.user_message, "red")
+                show_snack(page, res.user_message, ft.Colors.RED)
                 logger.warning("Self-test failed during vault creation: %s", res.dev_details)
                 try:
                     conn.close()
@@ -308,7 +308,7 @@ def build_login_view(
             on_unlocked()
 
         except Exception as ex:
-            show_snack(page, f"Vault creation failed: {ex}", "red")
+            show_snack(page, f"Vault creation failed: {ex}", ft.Colors.RED)
             logger.error("Vault creation failed: %s", ex)
             try:
                 if conn:
@@ -440,7 +440,7 @@ def build_login_view(
                 password=pwd,
             )
             if not res.ok:
-                show_snack(page, res.user_message, "red")
+                show_snack(page, res.user_message, ft.Colors.RED)
                 conn.close()
                 import_status.value = "Import failed: self-test error."
                 import_status.color = ft.Colors.RED

@@ -22,6 +22,7 @@ from views.components.helpers import (
     _safe_update, 
     _make_list_delete_dialog
 )
+from database import get_setting
 
 _FIELD_WIDTHS: dict = {
     # Primary identifier columns
@@ -113,6 +114,22 @@ class ListEditorBody(ft.Column):
         )
         self._build_table_rows()
 
+        # Load patient-specific terms into spell checker so existing
+        # medication names, conditions, etc. won't be flagged as misspelled
+        try:
+            from utils.spell_check import add_known_words
+            patient_words = []
+            for item in self._items:
+                for k in ("name", "substance", "immunization", "payer"):
+                    val = str(item.get(k, "") or "").strip()
+                    if val:
+                        # Split multi-word names and add each word
+                        patient_words.extend(val.split())
+            if patient_words:
+                add_known_words(patient_words)
+        except Exception:
+            pass
+
         # --- Header ---
         self.add_btn = ft.FilledButton("Add", icon=ft.Icons.ADD, on_click=self.add_row)
         header_controls: List[Any] = [ft.Text(title, size=pt_scale(page, 18), weight="bold")]
@@ -174,6 +191,32 @@ class ListEditorBody(ft.Column):
                 else:
                     col_w = pt_scale(self._page, _FIELD_WIDTHS.get(k, _DEFAULT_FIELD_WIDTH))
                     val_str = str(item.get(k, "") or "")
+
+                    # Convert vitals value/unit to user's preferred measurement system
+                    if self.field_key == "vitals.list" and k in ("value", "unit"):
+                        item_name = str(item.get("name", "")).strip().lower()
+                        if item_name in ("weight", "height", "temperature"):
+                            try:
+                                from utils.unit_conversion import format_vital_for_display
+                                pref = get_setting(self._page.db_connection, "units.measurement_system", "imperial")
+                                dv, du = format_vital_for_display(
+                                    item_name,
+                                    str(item.get("value", "")),
+                                    str(item.get("unit", "")),
+                                    pref,
+                                )
+                                val_str = dv if k == "value" else du
+                            except Exception:
+                                pass  # fall through to raw value on error
+
+                    # Format date columns to user's preferred format
+                    if val_str and ("date" in k):
+                        try:
+                            from utils.date_format import format_date, DEFAULT_FORMAT
+                            _dfmt = get_setting(self._page.db_connection, "units.date_format", DEFAULT_FORMAT)
+                            val_str = format_date(val_str, _dfmt)
+                        except Exception:
+                            pass
                     
                     if self.is_section_sensitive and not revealed:
                         display_str = "••••••••" if val_str else ""
@@ -288,13 +331,10 @@ class ListEditorBody(ft.Column):
                 dlg_fields[k] = tf
                 controls.append(tf)
 
-        def _save(e=None):
+        def _do_save(field_values: dict):
+            """Actually persist the row data and close the dialog."""
             d = dict(item)
-            for k, ctrl in dlg_fields.items():
-                if isinstance(ctrl, ft.Checkbox):
-                    d[k] = bool(ctrl.value)
-                else:
-                    d[k] = (ctrl.value or "").strip()
+            d.update(field_values)
             
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             d["_updated"] = now_str
@@ -309,7 +349,38 @@ class ListEditorBody(ft.Column):
             _safe_update(self.data_table)
             dlg.open = False
             _safe_update(dlg)
-            show_snack(self._page, "Saved row.", "green")
+            show_snack(self._page, "Saved row.", ft.Colors.GREEN)
+
+        def _save(e=None, _skip_spellcheck=False):
+            # Collect field values from dialog controls
+            field_vals = {}
+            for k, ctrl in dlg_fields.items():
+                if isinstance(ctrl, ft.Checkbox):
+                    field_vals[k] = bool(ctrl.value)
+                else:
+                    field_vals[k] = (ctrl.value or "").strip()
+
+            # Spell check prose fields before saving
+            if not _skip_spellcheck:
+                try:
+                    from utils.spell_check import check_text, should_check_field
+                    all_issues = []
+                    for k, val in field_vals.items():
+                        if should_check_field(k) and isinstance(val, str) and val.strip():
+                            issues = check_text(val, field_key=k)
+                            all_issues.extend(issues)
+                    if all_issues:
+                        self._show_spell_dialog(
+                            all_issues,
+                            dlg_fields,
+                            field_vals,
+                            lambda fv: _do_save(fv),
+                        )
+                        return
+                except Exception:
+                    pass  # spell check failure should never block saving
+
+            _do_save(field_vals)
 
         def _cancel(e=None):
             dlg.open = False
@@ -350,7 +421,120 @@ class ListEditorBody(ft.Column):
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         d["_updated"] = now_str
         self._persist()
-        show_snack(self._page, "Saved.", "green")
+        show_snack(self._page, "Saved.", ft.Colors.GREEN)
+
+    def _show_spell_dialog(self, issues, dlg_fields, field_vals, save_callback):
+        """Show a spell check dialog with correction suggestions.
+
+        Args:
+            issues: list of SpellingIssue objects
+            dlg_fields: dict of field_key → TextField/Checkbox controls
+            field_vals: dict of field_key → current string values
+            save_callback: function(field_vals) to call when saving
+        """
+        from utils.spell_check import apply_corrections, add_known_words
+
+        correction_controls = []
+        correction_dropdowns = {}
+
+        for issue in issues:
+            field_label = issue.field_key.replace("_", " ").title()
+            options = [ft.dropdown.Option(s, f"Replace with: {s}") for s in issue.suggestions]
+            options.append(ft.dropdown.Option("__ignore__", "(Ignore)"))
+            suggestions_text = ", ".join(issue.suggestions) if issue.suggestions else "no suggestions"
+
+            dd = ft.Dropdown(
+                label=f'"{issue.word}" in {field_label}',
+                width=400,
+                options=options,
+                value=issue.suggestions[0] if issue.suggestions else "__ignore__",
+                dense=True,
+                tooltip=f'Possible misspelling: "{issue.word}" in {field_label}. Suggestions: {suggestions_text}',
+            )
+            correction_dropdowns[issue.word] = dd
+            correction_controls.append(dd)
+
+        def _apply(e=None):
+            spell_dlg.open = False
+            _safe_update(spell_dlg)
+
+            # Build corrections map
+            corrections = {}
+            ignored = []
+            for word, dd in correction_dropdowns.items():
+                if dd.value and dd.value != "__ignore__":
+                    corrections[word] = dd.value
+                else:
+                    ignored.append(word)
+
+            # Add ignored words so they won't be flagged again
+            if ignored:
+                add_known_words(ignored)
+
+            # Apply corrections to field values
+            if corrections:
+                for k in field_vals:
+                    if isinstance(field_vals[k], str):
+                        field_vals[k] = apply_corrections(field_vals[k], corrections)
+                        # Also update the edit dialog text fields if still open
+                        ctrl = dlg_fields.get(k)
+                        if isinstance(ctrl, ft.TextField):
+                            ctrl.value = field_vals[k]
+                            try:
+                                ctrl.update()
+                            except Exception:
+                                pass
+
+            save_callback(field_vals)
+
+        def _save_as_is(e=None):
+            spell_dlg.open = False
+            _safe_update(spell_dlg)
+            # Add all flagged words to known list so they won't reappear
+            add_known_words([issue.word for issue in issues])
+            save_callback(field_vals)
+
+        def _cancel_spell(e=None):
+            spell_dlg.open = False
+            _safe_update(spell_dlg)
+            # Go back to editing — don't save
+
+        s_label = f"Spell check found {len(issues)} possible misspelling{'s' if len(issues) != 1 else ''}. Use the dropdowns to select corrections."
+        spell_dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Icon(ft.Icons.SPELLCHECK, color=ft.Colors.AMBER),
+                ft.Text("Spell Check", weight="bold"),
+                ft.IconButton(ft.Icons.CLOSE, on_click=_cancel_spell),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            content=ft.Semantics(
+                label=s_label,
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            f"Found {len(issues)} possible misspelling{'s' if len(issues) != 1 else ''}:",
+                            size=13,
+                            italic=True,
+                        ),
+                        ft.Divider(),
+                    ] + correction_controls,
+                    tight=True,
+                    scroll=ft.ScrollMode.AUTO,
+                    width=pt_scale(self._page, 450),
+                )
+            ),
+            actions=[
+                ft.TextButton("Back to Edit", on_click=_cancel_spell),
+                ft.OutlinedButton("Save As-Is", on_click=_save_as_is),
+                ft.FilledButton("Apply Corrections", on_click=_apply),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=_cancel_spell,
+        )
+
+        append_dialog(self._page, spell_dlg)
+        spell_dlg.open = True
+        self._page.update()
 
     def _delete_row(self, item_id: str) -> None:
         dlg = _make_list_delete_dialog(self._page)
@@ -362,7 +546,7 @@ class ListEditorBody(ft.Column):
             self._persist()
             self._build_table_rows()
             _safe_update(self.data_table)
-            show_snack(self._page, "Item deleted.", "green")
+            show_snack(self._page, "Item deleted.", ft.Colors.GREEN)
 
         def cancel(_):
             dlg.open = False
@@ -392,36 +576,8 @@ class ListEditorBody(ft.Column):
         # Keep existing external decrypt-and-open behavior
         if ai_fname:
             def _open_ai_doc(e, fname=ai_fname):
-                import os, tempfile, time as _time
-                from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
-                from utils.open_file import open_file_cross_platform
-                try:
-                    cur = self._page.db_connection.cursor()
-                    cur.execute(
-                        "SELECT file_path FROM documents WHERE patient_id=? AND file_name=? ORDER BY id DESC LIMIT 1",
-                        (self.patient_id, fname),
-                    )
-                    row = cur.fetchone()
-                    if not row or not row[0]:
-                        show_snack(self._page, "Source file not found.", "red")
-                        return
-                    from core.paths import resolve_doc_path
-                    resolved = str(resolve_doc_path(row[0]))
-                    if not os.path.exists(resolved):
-                        show_snack(self._page, "Source file not found.", "red")
-                        return
-                    fmk = get_or_create_file_master_key(self._page.db_connection, dmk_raw=self._page.db_key_raw)
-                    with open(resolved, "rb") as f:
-                        ciphertext = f.read()
-                    plaintext = decrypt_bytes(fmk, ciphertext)
-                    _, ext = os.path.splitext(fname)
-                    tmp = os.path.join(tempfile.gettempdir(), f"mrma_dec_{int(_time.time())}{ext or '.pdf'}")
-                    with open(tmp, "wb") as f:
-                        f.write(plaintext)
-                    open_file_cross_platform(tmp)
-                    show_snack(self._page, f"Opened {fname}", "blue")
-                except Exception as ex:
-                    show_snack(self._page, f"Open failed: {ex}", "red")
+                from utils.open_file import decrypt_and_open_document
+                decrypt_and_open_document(self._page, fname, patient_id=self.patient_id)
 
             source_control = ft.Text(
                 spans=[
@@ -440,6 +596,28 @@ class ListEditorBody(ft.Column):
         body_controls = []
         for k, lbl in self.columns:
             val = str(item.get(k, "") or "")
+            # Convert vitals value/unit in the info dialog too
+            if self.field_key == "vitals.list" and k in ("value", "unit"):
+                item_name = str(item.get("name", "")).strip().lower()
+                if item_name in ("weight", "height", "temperature"):
+                    try:
+                        from utils.unit_conversion import format_vital_for_display
+                        pref = get_setting(self._page.db_connection, "units.measurement_system", "imperial")
+                        dv, du = format_vital_for_display(
+                            item_name, str(item.get("value", "")),
+                            str(item.get("unit", "")), pref,
+                        )
+                        val = dv if k == "value" else du
+                    except Exception:
+                        pass
+            # Format date columns in the info dialog
+            if val and "date" in k:
+                try:
+                    from utils.date_format import format_date, DEFAULT_FORMAT
+                    _dfmt = get_setting(self._page.db_connection, "units.date_format", DEFAULT_FORMAT)
+                    val = format_date(val, _dfmt)
+                except Exception:
+                    pass
             if val:
                 body_controls.append(ft.Text(f"{lbl}: {val}"))
         

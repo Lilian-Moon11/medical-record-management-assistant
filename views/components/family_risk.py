@@ -76,8 +76,8 @@ def build_risk_summary(page: ft.Page, items: list[dict],
                 
                 if ai_fname:
                     def _open_ai_doc(ev, fname=ai_fname):
-                        page.mrma._doc_search_term = fname
-                        page.go("/documents")
+                        from utils.open_file import decrypt_and_open_document
+                        decrypt_and_open_document(page, fname)
                     
                     source_control = ft.Text(
                         spans=[

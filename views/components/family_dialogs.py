@@ -99,7 +99,7 @@ def _ensure_detail_dialog(page: ft.Page, on_refresh):
             name = page.mrma._fh_detail_state["name"]
             pat = page.current_profile
             if not pat:
-                show_snack(page, "No patient profile.", "red")
+                show_snack(page, "No patient profile.", ft.Colors.RED)
                 return
             patient_id = pat[0]
             items = _load(page, patient_id)
@@ -118,10 +118,10 @@ def _ensure_detail_dialog(page: ft.Page, on_refresh):
             _save_items(page, patient_id, items)
             _close()
             on_refresh()
-            show_snack(page, "Changes saved.", "green")
+            show_snack(page, "Changes saved.", ft.Colors.GREEN)
         except Exception as ex:
             import logging; logging.error("Family history detail save error", exc_info=True)
-            show_snack(page, f"Save error: {ex}", "red")
+            show_snack(page, f"Save error: {ex}", ft.Colors.RED)
 
     page.mrma._fh_detail_rebuild = _rebuild_list
     page.mrma._fh_detail_cond_list = _cond_list
@@ -222,14 +222,14 @@ def _ensure_add_dialog(page: ft.Page, on_refresh):
             rel  = (_rel_dd.value or "").strip()
             cond = (_cond_tf.value or "").strip()
             if not rel:
-                show_snack(page, "Relation is required.", "orange")
+                show_snack(page, "Relation is required.", ft.Colors.ORANGE)
                 return
             if not cond:
-                show_snack(page, "Condition is required.", "orange")
+                show_snack(page, "Condition is required.", ft.Colors.ORANGE)
                 return
             pat = page.current_profile
             if not pat:
-                show_snack(page, "No patient profile loaded.", "red")
+                show_snack(page, "No patient profile loaded.", ft.Colors.RED)
                 return
             patient_id = pat[0]
             entry: dict = {
@@ -243,10 +243,10 @@ def _ensure_add_dialog(page: ft.Page, on_refresh):
             _save_items(page, patient_id, items)
             _close()
             on_refresh()
-            show_snack(page, "Family member added.", "green")
+            show_snack(page, "Family member added.", ft.Colors.GREEN)
         except Exception as ex:
             import logging; logging.error("Family history add save error", exc_info=True)
-            show_snack(page, f"Save error: {ex}", "red")
+            show_snack(page, f"Save error: {ex}", ft.Colors.RED)
 
     _name_tf.on_submit = _save
     _cond_tf.on_submit = _save

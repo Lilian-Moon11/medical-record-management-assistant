@@ -291,6 +291,37 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
     )
 
 
+    current_units = get_setting(page.db_connection, "units.measurement_system", "imperial")
+    def _save_units(e):
+        val = getattr(e, 'data', None) or units_dd.value or "imperial"
+        set_setting(page.db_connection, "units.measurement_system", val)
+        show_snack(page, "Measurement system saved.", ft.Colors.GREEN)
+    units_dd = ft.Dropdown(
+        label="Measurement System",
+        width=300,
+        options=[
+            ft.dropdown.Option("imperial", "Imperial (lbs, ft/in, °F)"),
+            ft.dropdown.Option("metric", "Metric (kg, cm, °C)"),
+        ],
+        value=current_units,
+    )
+    units_dd.on_select = _save_units
+
+    from utils.date_format import FORMAT_OPTIONS, DEFAULT_FORMAT
+    current_date_fmt = get_setting(page.db_connection, "units.date_format", DEFAULT_FORMAT)
+    def _save_date_fmt(e):
+        val = getattr(e, 'data', None) or date_fmt_dd.value or DEFAULT_FORMAT
+        set_setting(page.db_connection, "units.date_format", val)
+        show_snack(page, "Date format saved.", ft.Colors.GREEN)
+    date_fmt_dd = ft.Dropdown(
+        label="Date Format",
+        width=300,
+        options=[ft.dropdown.Option(key, label) for key, label in FORMAT_OPTIONS],
+        value=current_date_fmt,
+    )
+    date_fmt_dd.on_select = _save_date_fmt
+
+
     current_auto_lock = get_setting(page.db_connection, "ui.auto_lock_minutes", "15")
     def _save_auto_lock(e):
         val = e.control.value.strip()
@@ -329,6 +360,8 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
 
 
         set_setting(page.db_connection, "ui.auto_lock_minutes", "15")
+
+        # Note: measurement system is NOT reset — it's a data-integrity preference
 
         # Reset Controls
 
@@ -755,6 +788,9 @@ def get_settings_view(page: ft.Page, apply_settings_callback):
                 _scale_label,
                 lt_slider,
 
+                ft.Container(height=pt_scale(page, 10)),
+                units_dd,
+                date_fmt_dd,
                 ft.Container(height=pt_scale(page, 10)),
                 auto_lock_field,
                 ft.Container(height=pt_scale(page, 10)),

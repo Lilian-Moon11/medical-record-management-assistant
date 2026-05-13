@@ -49,42 +49,11 @@ PDF_FIELD_DEFAULT_LIMIT = 500
 # ---------------------------------------------------------------------------
 # Medical shorthand normalisation
 # ---------------------------------------------------------------------------
-# Common prescription abbreviations → plain-English equivalents.
-# Applied when building the patient digest so forms expecting "Twice daily"
-# don't receive the raw abbreviation "bid".
-_MED_SHORTHAND = {
-    "bid": "Twice daily", "b.i.d.": "Twice daily",
-    "tid": "Three times daily", "t.i.d.": "Three times daily",
-    "qd": "Once daily", "q.d.": "Once daily",
-    "qid": "Four times daily", "q.i.d.": "Four times daily",
-    "qhs": "At bedtime", "q.h.s.": "At bedtime",
-    "prn": "As needed", "p.r.n.": "As needed",
-    "qod": "Every other day", "q.o.d.": "Every other day",
-    "ac": "Before meals", "a.c.": "Before meals",
-    "pc": "After meals", "p.c.": "After meals",
-    "q4h": "Every 4 hours", "q6h": "Every 6 hours",
-    "q8h": "Every 8 hours", "q12h": "Every 12 hours",
-    "po": "By mouth", "p.o.": "By mouth",
-    "sl": "Sublingual", "s.l.": "Sublingual",
-    "im": "Intramuscular", "i.m.": "Intramuscular",
-    "iv": "Intravenous", "i.v.": "Intravenous",
-    "sq": "Subcutaneous", "subq": "Subcutaneous",
-    "od": "Right eye", "os": "Left eye", "ou": "Both eyes",
-    "gtts": "Drops", "tab": "Tablet", "tabs": "Tablets",
-    "cap": "Capsule", "caps": "Capsules",
-    "mg": "mg", "mcg": "mcg", "ml": "mL",
-}
+# Shared abbreviation dictionary and normalisation utility.
+# Kept here as an import alias for backward compatibility.
+from utils.medical_abbreviations import MED_SHORTHAND as _MED_SHORTHAND
+from utils.medical_abbreviations import normalize_medical_shorthand as _normalize_frequency
 
-
-def _normalize_frequency(text: str) -> str:
-    """Replace medical shorthand anywhere in *text* with plain English."""
-    if not text:
-        return text
-    # Whole-token replacement (case-insensitive, word-boundary aware)
-    for abbr, full in _MED_SHORTHAND.items():
-        pattern = re.compile(r'\b' + re.escape(abbr) + r'\b', re.IGNORECASE)
-        text = pattern.sub(full, text)
-    return text
 
 _MAP_PROMPT_TEMPLATE = """\
 You are a medical form assistant. A patient's structured health record is provided

@@ -29,6 +29,7 @@ from utils.ui_helpers import OUTLINE_VARIANT, show_snack, themed_panel, pt_scale
 from database import (
     list_distinct_test_names,
     list_all_results_for_test,
+    get_setting,
 )
 from views.components.lab_helpers import _flag_chip
 from views.components.lab_chart import build_lab_chart
@@ -128,6 +129,8 @@ def get_labs_view(page: ft.Page):
     # ----------------------------
     def _build_result_rows(rows):
         results_table.rows = []
+        from utils.date_format import format_date, DEFAULT_FORMAT
+        _date_fmt = get_setting(page.db_connection, "units.date_format", DEFAULT_FORMAT)
         for x in rows:
             # x shape: (result_id, test_name, value_text, value_num, unit,
             #           ref_range_text, ref_low, ref_high, ref_unit,
@@ -166,11 +169,24 @@ def get_labs_view(page: ft.Page):
                 )
 
             cells = [
-                        ft.DataCell(_clickable(ft.Text(result_date))),
+                        ft.DataCell(_clickable(ft.Text(format_date(result_date, _date_fmt)))),
                         ft.DataCell(_clickable(ft.Text(value_text or ""))),
                         ft.DataCell(_clickable(ft.Text(unit or ""))),
                         ft.DataCell(_clickable(_flag_chip(flag))),
             ]
+
+            # Convert weight/height/temperature display for vitals category
+            _test_lower = (x[1] or "").strip().lower()
+            if page.mrma._labs_category == "Vitals" and _test_lower in ("weight", "height", "temperature"):
+                try:
+                    from utils.unit_conversion import format_vital_for_display
+                    _pref = get_setting(page.db_connection, "units.measurement_system", "imperial")
+                    _dv, _du = format_vital_for_display(_test_lower, value_text or "", unit or "", _pref)
+                    cells[1] = ft.DataCell(_clickable(ft.Text(_dv)))
+                    cells[2] = ft.DataCell(_clickable(ft.Text(_du)))
+                except Exception:
+                    pass
+
             if _show_notes:
                 notes_text = x[11] or ""
                 # Truncate long notes for table display
@@ -222,9 +238,6 @@ def get_labs_view(page: ft.Page):
             results_table.rows = []
             test_title.content.value = "Select a metric or test"
             try:
-                test_title.update()
-                chart_container.update()
-                results_table.update()
                 page.update()
             except Exception:
                 pass
@@ -233,7 +246,7 @@ def get_labs_view(page: ft.Page):
         try:
             rows = list_all_results_for_test(page.db_connection, patient_id, tn, category=page.mrma._labs_category)
         except Exception as ex:
-            show_snack(page, f"Load results failed: {ex}", "red")
+            show_snack(page, f"Load results failed: {ex}", ft.Colors.RED)
             rows = []
 
         # Sort rows before rendering
@@ -264,15 +277,12 @@ def get_labs_view(page: ft.Page):
 
         # Build chart (always uses original chronological order — pass unsorted)
         # Build chart (always uses original chronological order — pass unsorted)
-        build_lab_chart(page, sorted(rows, key=lambda x: str(x[10] or x[14] or "")), chart_container)
+        build_lab_chart(page, sorted(rows, key=lambda x: str(x[10] or x[14] or "")), chart_container, test_name=tn)
 
         # Build table
         _build_result_rows(rows)
 
         try:
-            test_title.update()
-            chart_container.update()
-            results_table.update()
             page.update()
         except Exception:
             pass
@@ -289,7 +299,7 @@ def get_labs_view(page: ft.Page):
                 page.db_connection, patient_id, search=search, category=page.mrma._labs_category
             )
         except Exception as ex:
-            show_snack(page, f"Load tests failed: {ex}", "red")
+            show_snack(page, f"Load tests failed: {ex}", ft.Colors.RED)
             names = []
 
         test_list_view.controls = []

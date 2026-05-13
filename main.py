@@ -111,6 +111,18 @@ def main(page: ft.Page):
     def _on_keyboard(e: ft.KeyboardEvent):
         page.mrma._last_activity = time.time()
 
+        # Escape → close the topmost open dialog/overlay
+        if e.key == "Escape":
+            for ctrl in reversed(page.overlay):
+                if getattr(ctrl, "open", False):
+                    ctrl.open = False
+                    try:
+                        ctrl.update()
+                    except Exception:
+                        pass
+                    page.update()
+                    return
+
         # Disable keyboard navigation if any dialog/overlay is currently open
         if any(getattr(ctrl, "open", False) for ctrl in page.overlay):
             return
@@ -234,7 +246,7 @@ def main(page: ft.Page):
                 
             elapsed = time.time() - getattr(page.mrma, "_last_activity", time.time())
             if elapsed > (timeout_mins * 60):
-                show_snack(page, f"Session expired after {timeout_mins} minutes of inactivity.", "orange")
+                show_snack(page, f"Session expired after {timeout_mins} minutes of inactivity.", ft.Colors.ORANGE)
                 logout()
 
     page.run_task(session_watchdog)

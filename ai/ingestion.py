@@ -421,7 +421,7 @@ def run_ingestion(
 
         file_name = doc.get("file_name", "unknown")
         pages = _extract_text(plaintext, file_name)
-        print(f"[AI-DIAG] Doc {doc['id']}: {len(pages)} pages extracted")
+        logger.debug("Doc %d: %d pages extracted", doc["id"], len(pages))
 
 
         full_text_parts = []
@@ -435,7 +435,7 @@ def run_ingestion(
 
         if not (stop_event and stop_event.is_set()):
             full_text = "\n".join(full_text_parts)
-            print(f"[AI-DIAG] Doc {doc['id']}: total text length = {len(full_text)} chars, quality flags = {doc_quality_flags}")
+            logger.debug("Doc %d: total text length = %d chars, quality flags = %s", doc["id"], len(full_text), doc_quality_flags)
 
             # Persist extracted text so check_upload_for_matches can use it
             try:
@@ -482,7 +482,7 @@ def run_ingestion(
             if _quality_warnings:
                 _insert_suggestions(conn, patient_id, doc["id"], _quality_warnings)
 
-            print(f"[AI-DIAG] Doc {doc['id']}: text has content = {bool(full_text.strip())}")
+            logger.debug("Doc %d: text has content = %s", doc["id"], bool(full_text.strip()))
             if full_text.strip():
                 # Extract Document Metadata (Visit Date & Specialty) using AI
                 try:
@@ -523,9 +523,9 @@ Document:
                         file_name,
                         doc_id=doc["id"],
                     )
-                    print(f"[AI-DIAG] Doc {doc['id']}: LLM returned {len(suggestions)} suggestions")
+                    logger.debug("Doc %d: LLM returned %d suggestions", doc["id"], len(suggestions))
                     for s in suggestions:
-                        print(f"[AI-DIAG]   -> field_key={s['field_key']}, confidence={s.get('confidence')}, conflict={s.get('conflict')}")
+                        logger.debug("  -> field_key=%s, confidence=%s, conflict=%s", s['field_key'], s.get('confidence'), s.get('conflict'))
                     if suggestions:
                         _insert_suggestions(conn, patient_id, doc["id"], suggestions)
                         # Verify insertion
@@ -533,12 +533,11 @@ Document:
                             "SELECT COUNT(*) FROM ai_extraction_inbox WHERE patient_id=? AND status='pending'",
                             (patient_id,)
                         ).fetchone()[0]
-                        print(f"[AI-DIAG] Total pending suggestions in inbox: {inbox_count}")
+                        logger.debug("Total pending suggestions in inbox: %d", inbox_count)
                     else:
-                        print(f"[AI-DIAG] Doc {doc['id']}: No suggestions produced by LLM")
+                        logger.debug("Doc %d: No suggestions produced by LLM", doc["id"])
                 except Exception as ex:
-                    print(f"[AI-DIAG] Doc {doc['id']}: EXTRACTION FAILED: {ex}")
-                    logger.error("Extraction failed for doc %d: %s", doc["id"], ex)
+                    logger.error("Doc %d: extraction failed: %s", doc["id"], ex)
 
         if not (stop_event and stop_event.is_set()):
             # Always push a dummy processed record so _get_unprocessed_docs stops fetching it

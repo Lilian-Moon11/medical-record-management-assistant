@@ -336,7 +336,7 @@ class CategoryPanel(ft.Column):
             new_val = (value_tf.value or "").strip()
             
             if not new_lbl:
-                return show_snack(self._page, "Field Name is required", "red")
+                return show_snack(self._page, "Field Name is required", ft.Colors.RED)
 
             fk = field_key
             if not fk:
@@ -402,7 +402,7 @@ class CategoryPanel(ft.Column):
             # Close dialog and refresh health record view completely if core changed
             dlg.open = False
             _safe_update(dlg)
-            show_snack(self._page, "Saved.", "green")
+            show_snack(self._page, "Saved.", ft.Colors.GREEN)
             
             if is_core:
                 try:
@@ -452,8 +452,8 @@ class CategoryPanel(ft.Column):
                 
             if src_label:
                 def _nav_to_doc(e):
-                    self._page.mrma._doc_search_term = src_label
-                    self._page.go("/documents")
+                    from utils.open_file import decrypt_and_open_document
+                    decrypt_and_open_document(self._page, src_label, patient_id=self.patient_id)
                 
                 source_control = ft.Text(
                     spans=[

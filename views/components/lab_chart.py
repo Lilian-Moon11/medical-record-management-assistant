@@ -10,14 +10,39 @@ import re
 import flet as ft
 import flet.canvas as cv
 from utils.ui_helpers import pt_scale
+from database import get_setting
 
-def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Container):
+def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Container, test_name: str = ""):
     """Build a canvas-based line chart from the results rows and set it as chart_container's content."""
     CHART_H = pt_scale(page, 220)
     CHART_PAD_L = pt_scale(page, 55)   # left padding for y-axis labels
     CHART_PAD_R = pt_scale(page, 20)
     CHART_PAD_T = pt_scale(page, 20)
     CHART_PAD_B = pt_scale(page, 35)   # bottom padding for x-axis labels
+
+    # Unit conversion for vitals (weight, height, temperature)
+    _convert = None
+    _display_unit = ""
+    _test_lower = (test_name or "").strip().lower()
+    if _test_lower in ("weight", "height", "temperature"):
+        try:
+            from utils.unit_conversion import format_vital_for_display, convert_height
+            _pref = get_setting(page.db_connection, "units.measurement_system", "imperial")
+            _default_units = {"weight": "kg", "height": "cm", "temperature": "°C"}
+            if _pref == "imperial":
+                def _convert(val, unit=""):
+                    _u = unit or _default_units.get(_test_lower, "")
+                    # Height needs special handling: chart needs a numeric value (inches),
+                    # not the formatted "5' 7\"" string
+                    if _test_lower == "height" and _u.lower() in ("cm", "centimeter", "centimeters"):
+                        return convert_height(float(val), "cm", "in")
+                    dv, du = format_vital_for_display(_test_lower, str(val), _u, _pref)
+                    try:
+                        return float(dv)
+                    except (ValueError, TypeError):
+                        return val
+        except Exception:
+            pass
 
     # Track per-point data including individual reference ranges
     numeric_pts = []  # list of (index, vals_list, date_label, tooltip_text, ref_low, ref_high)
@@ -42,6 +67,11 @@ def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Conta
                 vals = [vn]
             else:
                 continue
+
+        # Apply unit conversion for vitals
+        if _convert:
+            unit = row[4] or ""
+            vals = [_convert(v, unit) for v in vals]
 
         max_series_count = max(max_series_count, len(vals))
 
@@ -189,12 +219,14 @@ def build_lab_chart(page: ft.Page, results_rows: list, chart_container: ft.Conta
 
     # X-axis date labels (show ~6 max)
     label_step = max(1, n // 6)
+    try:
+        from utils.date_format import format_date_short, DEFAULT_FORMAT
+        _date_fmt = get_setting(page.db_connection, "units.date_format", DEFAULT_FORMAT)
+    except Exception:
+        _date_fmt = "MM/DD/YYYY"
     for i, (idx, vals, d, tip, _rl, _rh) in enumerate(numeric_pts):
         if i % label_step == 0 or i == n - 1:
-            if len(d) >= 10 and d[4] == '-' and d[7] == '-':
-                short = f"{d[5:7]}/{d[8:10]}/{d[2:4]}"
-            else:
-                short = d
+            short = format_date_short(d, _date_fmt) if d else ""
             shapes.append(cv.Text(_x(i) - 15, CHART_H - CHART_PAD_B + 5, short, style=ft.TextStyle(size=9, color=ft.Colors.ON_SURFACE_VARIANT if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else ft.Colors.GREY)))
 
     chart_canvas = cv.Canvas(

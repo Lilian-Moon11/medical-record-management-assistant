@@ -18,7 +18,7 @@ from database import (
     get_document_metadata,
     get_or_create_report_for_date,
     cleanup_empty_reports,
-    list_test_names_for_date,
+    get_setting,
 )
 from views.components.lab_helpers import _parse_value_num, _flag_result
 
@@ -106,8 +106,8 @@ def open_result_info(page: ft.Page, result_row):
             src_label = f"Document #{source_document_id}"
 
         def _nav_to_doc(e, dname=src_label):
-            page.mrma._doc_search_term = dname
-            page.go("/documents")
+            from utils.open_file import decrypt_and_open_document
+            decrypt_and_open_document(page, dname)
 
         source_control = ft.Text(
             spans=[
@@ -123,56 +123,13 @@ def open_result_info(page: ft.Page, result_row):
     else:
         source_control = ft.Text("Source: Manual entry", italic=True)
 
-    # "View all from this date" button
     info_date = result_date or collected_date or ""
-    date_controls = []
-    if info_date:
-        patient = getattr(page, "current_profile", None)
-        patient_id = patient[0] if patient else None
-        if patient_id:
-            try:
-                same_date_tests = list_test_names_for_date(
-                    page.db_connection, patient_id, info_date,
-                    category=page.mrma._labs_category,
-                )
-            except Exception:
-                same_date_tests = []
-            if len(same_date_tests) > 1:
-                test_list_str = ", ".join(same_date_tests)
-
-                def _view_all_for_date(e, d=info_date, tests=same_date_tests):
-                    # Close the current info dialog
-                    page.mrma._lab_result_info_dlg.open = False
-                    
-                    def _close_list(ev=None):
-                        list_dlg.open = False
-                        page.update()
-
-                    # Build list of tests
-                    test_controls = [ft.Text(f"• {t}") for t in tests]
-                    
-                    list_dlg = ft.AlertDialog(
-                        title=ft.Row([
-                            ft.Text(f"Tests from {d}"),
-                            ft.IconButton(ft.Icons.CLOSE, on_click=_close_list)
-                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        content=ft.Column(test_controls, tight=True, scroll=True),
-                        actions=[ft.FilledButton("Close", on_click=_close_list)],
-                        actions_alignment=ft.MainAxisAlignment.END,
-                        on_dismiss=_close_list,
-                    )
-                    append_dialog(page, list_dlg)
-                    list_dlg.open = True
-                    page.update()
-
-                date_controls.append(
-                    ft.TextButton(
-                        f"View all from {info_date} ({len(same_date_tests)} tests)",
-                        icon=ft.Icons.CALENDAR_MONTH,
-                        on_click=_view_all_for_date,
-                        tooltip=test_list_str,
-                    )
-                )
+    try:
+        from utils.date_format import format_date, DEFAULT_FORMAT
+        _date_fmt = get_setting(page.db_connection, "units.date_format", DEFAULT_FORMAT)
+        info_date = format_date(info_date, _date_fmt)
+    except Exception:
+        pass
 
     page.mrma._lab_result_info_title.value = test_name or f"Result #{result_id}"
     body_controls = [
@@ -188,7 +145,6 @@ def open_result_info(page: ft.Page, result_row):
                  color=ft.Colors.ON_SURFACE_VARIANT
                  if hasattr(ft.Colors, "ON_SURFACE_VARIANT") else None),
     ]
-    body_controls.extend(date_controls)
     page.mrma._lab_result_info_body.controls = body_controls
 
     dlg.open = True
@@ -199,6 +155,7 @@ def open_result_info(page: ft.Page, result_row):
 # Dialog: Add Lab Data (add a result to an existing or new report)
 # ----------------------------
 def _ensure_result_edit_dialog(page: ft.Page, patient_id: int, refresh_callback):
+    page.mrma._lab_result_edit_refresh = refresh_callback
     if getattr(page.mrma, "_lab_result_edit_dlg", None) is not None:
         return page.mrma._lab_result_edit_dlg
 
@@ -220,10 +177,10 @@ def _ensure_result_edit_dialog(page: ft.Page, patient_id: int, refresh_callback)
         value_text = (page.mrma._lx_value_text.value or "").strip()
 
         if not test_name_val:
-            show_snack(page, "Test name is required.", "red")
+            show_snack(page, "Test name is required.", ft.Colors.RED)
             return
         if not value_text:
-            show_snack(page, "Value is required.", "red")
+            show_snack(page, "Value is required.", ft.Colors.RED)
             return
 
         try:
@@ -239,9 +196,20 @@ def _ensure_result_edit_dialog(page: ft.Page, patient_id: int, refresh_callback)
             if not rdate:
                 rdate = date.today().isoformat()
 
-            # Auto-resolve report by date
+            # Auto-resolve report by date, preserving source doc if we are editing an AI result
+            src_doc_id = None
+            if old_report_id:
+                try:
+                    cur = page.db_connection.cursor()
+                    cur.execute("SELECT source_document_id FROM lab_reports WHERE id = ?", (old_report_id,))
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        src_doc_id = row[0]
+                except Exception:
+                    pass
+
             report_id = get_or_create_report_for_date(
-                page.db_connection, patient_id, rdate
+                page.db_connection, patient_id, rdate, source_doc_id=src_doc_id
             )
 
             # Parse ref range text into low/high
@@ -275,7 +243,7 @@ def _ensure_result_edit_dialog(page: ft.Page, patient_id: int, refresh_callback)
                     notes=notes,
                     category=page.mrma._labs_category,
                 )
-                show_snack(page, f"Result added (#{new_id}).", "blue")
+                show_snack(page, f"Result added (#{new_id}).", ft.Colors.BLUE)
             else:
                 updated = update_lab_result(
                     page.db_connection,
@@ -295,30 +263,16 @@ def _ensure_result_edit_dialog(page: ft.Page, patient_id: int, refresh_callback)
                     notes=notes,
                     category=page.mrma._labs_category,
                 )
-                # If the report changed (date was edited), update the result's report_id
-                if old_report_id and int(old_report_id) != int(report_id):
-                    page.db_connection.execute(
-                        "UPDATE lab_results SET report_id = ? WHERE id = ? AND patient_id = ?",
-                        (report_id, result_id, patient_id),
-                    )
-                    page.db_connection.commit()
-
-                show_snack(
-                    page,
-                    "Result updated." if updated else "Result not found.",
-                    "blue" if updated else "orange",
-                )
-
-            # Clean up any orphaned reports
+            # If the report changed, cleanup empty ones
             cleanup_empty_reports(page.db_connection, patient_id)
 
             _close()
             # Refresh test menu and current test view
-            if refresh_callback:
-                refresh_callback(test_name_val)
+            if hasattr(page.mrma, "_lab_result_edit_refresh") and page.mrma._lab_result_edit_refresh:
+                page.mrma._lab_result_edit_refresh(test_name_val)
 
         except Exception as ex:
-            show_snack(page, f"Save result failed: {ex}", "red")
+            show_snack(page, f"Save result failed: {ex}", ft.Colors.RED)
 
     page.mrma._lx_test.on_submit = _save
     page.mrma._lx_value_text.on_submit = _save
@@ -413,6 +367,7 @@ def open_edit_result(page: ft.Page, result_row, patient_id: int, refresh_callbac
 # Dialog: Confirm Delete Result
 # ----------------------------
 def _ensure_result_delete_dialog(page: ft.Page, patient_id: int, refresh_callback):
+    page.mrma._lab_result_delete_refresh = refresh_callback
     if getattr(page.mrma, "_lab_result_delete_dlg", None) is not None:
         return page.mrma._lab_result_delete_dlg
 
@@ -438,15 +393,15 @@ def _ensure_result_delete_dialog(page: ft.Page, patient_id: int, refresh_callbac
             cleanup_empty_reports(page.db_connection, patient_id)
 
             # Refresh current view
-            if refresh_callback:
-                refresh_callback(None)
+            if hasattr(page.mrma, "_lab_result_delete_refresh") and page.mrma._lab_result_delete_refresh:
+                page.mrma._lab_result_delete_refresh(None)
 
             if deleted:
-                show_snack(page, "Result deleted.", "blue")
+                show_snack(page, "Result deleted.", ft.Colors.BLUE)
             else:
-                show_snack(page, "Result not found.", "orange")
+                show_snack(page, "Result not found.", ft.Colors.ORANGE)
         except Exception as ex:
-            show_snack(page, f"Delete result failed: {ex}", "red")
+            show_snack(page, f"Delete result failed: {ex}", ft.Colors.RED)
 
     page.mrma._lab_result_delete_dlg = ft.AlertDialog(
         modal=False,

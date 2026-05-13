@@ -42,7 +42,7 @@ def _save(page, patient_id: int, items: list[dict]):
             page.db_connection, patient_id, _FIELD_KEY, json.dumps(items), "user"
         )
     except Exception as ex:
-        show_snack(page, f"Save failed: {ex}", "red")
+        show_snack(page, f"Save failed: {ex}", ft.Colors.RED)
 
 
 def get_immunizations_view(page: ft.Page):
@@ -110,7 +110,7 @@ def get_immunizations_view(page: ft.Page):
 
     def _save_entry(_=None):
         if not (_imm_name.value or "").strip():
-            show_snack(page, "Immunization name is required.", "orange")
+            show_snack(page, "Immunization name is required.", ft.Colors.ORANGE)
             return
 
         entry = {
@@ -186,7 +186,7 @@ def get_immunizations_view(page: ft.Page):
                 immunizations.pop(pending)
                 _save(page, patient_id, immunizations)
             except Exception as ex:
-                show_snack(page, f"Delete failed: {ex}", "red")
+                show_snack(page, f"Delete failed: {ex}", ft.Colors.RED)
             _close()
             _refresh_view()
 

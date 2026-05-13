@@ -46,6 +46,7 @@ from database import (
     get_patient_documents,
     add_document,
     delete_document,
+    get_setting,
 )
 from database.clinical import get_pending_suggestion_count
 from utils.ui_helpers import append_dialog, pt_scale, show_snack, make_info_button
@@ -106,10 +107,10 @@ def get_documents_view(page: ft.Page):
             else:
                 refresh_table(search_field.value, update_ui=True)
                 
-            show_snack(page, "Record and file deleted.", "blue")
+            show_snack(page, "Record and file deleted.", ft.Colors.BLUE)
         except Exception as ex:
             logger.error("Document delete error: %s", ex)
-            show_snack(page, f"Delete failed: {ex}", "red")
+            show_snack(page, f"Delete failed: {ex}", ft.Colors.RED)
 
     if not hasattr(page.mrma, "_delete_dlg") or page.mrma._delete_dlg is None:
         page.mrma._delete_dlg = ft.AlertDialog(
@@ -177,12 +178,12 @@ def get_documents_view(page: ft.Page):
     # 3. HELPER FUNCTIONS
     async def open_doc_async(path: str | None, human_name: str = "record.pdf"):
         if not path:
-            show_snack(page, "File not found.", "red")
+            show_snack(page, "File not found.", ft.Colors.RED)
             return
         from core.paths import resolve_doc_path
         resolved = str(resolve_doc_path(path))
         if not os.path.exists(resolved):
-            show_snack(page, "File not found.", "red")
+            show_snack(page, "File not found.", ft.Colors.RED)
             return
 
         try:
@@ -202,12 +203,12 @@ def get_documents_view(page: ft.Page):
 
             open_file_cross_platform(tmp_path)
 
-            show_snack(page, "Opened a temporary decrypted copy.", "orange")
+            show_snack(page, "Opened a temporary decrypted copy.", ft.Colors.ORANGE)
         except InvalidToken:
-            show_snack(page, "This file appears to be corrupted or was encrypted with a different key.", "red")
+            show_snack(page, "This file appears to be corrupted or was encrypted with a different key.", ft.Colors.RED)
         except Exception as ex:
             logger.error("Document open error: %s", ex)
-            show_snack(page, f"Open failed: {ex}", "red")
+            show_snack(page, f"Open failed: {ex}", ft.Colors.RED)
 
     def open_doc_click(e: ft.ControlEvent):
         enc_path, human_name = e.control.data
@@ -258,6 +259,9 @@ def get_documents_view(page: ft.Page):
             
         all_docs.sort(key=sort_key, reverse=not sort_ascending)
 
+        from utils.date_format import format_date, DEFAULT_FORMAT
+        _date_fmt = get_setting(page.db_connection, "units.date_format", DEFAULT_FORMAT)
+
         for doc in all_docs:
             try:
                 # new get_patient_documents return shape unpack
@@ -278,8 +282,8 @@ def get_documents_view(page: ft.Page):
                     cells=[
                         ft.DataCell(ft.Icon(ft.Icons.INSERT_DRIVE_FILE, color="blue")),
                         ft.DataCell(ft.Text(str(file_name))),
-                        ft.DataCell(ft.Text(str(upload_date))),
-                        ft.DataCell(ft.Text(str(visit_date) if visit_date else "")),
+                        ft.DataCell(ft.Text(format_date(str(upload_date), _date_fmt))),
+                        ft.DataCell(ft.Text(format_date(str(visit_date), _date_fmt) if visit_date else "")),
                         ft.DataCell(ft.Text(str(specialty) if specialty else "")),
                         ft.DataCell(
                             ft.IconButton(
@@ -330,7 +334,7 @@ def get_documents_view(page: ft.Page):
         src_path = getattr(picked, "path", None) or getattr(picked, "file_path", None)
 
         if not src_path:
-            show_snack(page, "Picker returned no local path.", "red")
+            show_snack(page, "Picker returned no local path.", ft.Colors.RED)
             return
 
         # Destination: user data dir / data / <patient_id> / (via paths module)
@@ -374,7 +378,7 @@ def get_documents_view(page: ft.Page):
             )
 
             refresh_table(search_field.value, update_ui=True)
-            show_snack(page, "Document uploaded securely.", "blue")
+            show_snack(page, "Document uploaded securely.", ft.Colors.BLUE)
 
             # Run ingestion + candidate matching in background
             _uploaded_doc_id = doc_id
@@ -398,7 +402,7 @@ def get_documents_view(page: ft.Page):
 
                     # Only update UI if the session is still active (user hasn't locked out)
                     if getattr(page, "db_connection", None):
-                        show_snack(page, "AI Extraction Complete! Check your Dashboard.", "green")
+                        show_snack(page, "AI Extraction Complete! Check your Dashboard.", ft.Colors.GREEN)
 
                         if hasattr(page.mrma, "_refresh_overview_review_btn"):
                             try:
@@ -449,7 +453,7 @@ def get_documents_view(page: ft.Page):
 
         except Exception as ex:
             logger.error("Upload error: %s", ex)
-            show_snack(page, f"Error: {str(ex)}", "red")
+            show_snack(page, f"Error: {str(ex)}", ft.Colors.RED)
 
     # 7. INITIAL LAYOUT BUILD
     refresh_table(page.mrma._doc_search_term, update_ui=False)

@@ -557,7 +557,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         field_key = getattr(page.mrma._delete_field_dlg, "target_key", None)
 
         if not field_key or str(field_key).startswith("core.") or str(field_key).startswith("section."):
-            show_snack(page, "System fields cannot be deleted.", "red")
+            show_snack(page, "System fields cannot be deleted.", ft.Colors.RED)
             _close_delete()
             return
             
@@ -565,7 +565,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
             delete_field_definition(page.db_connection, field_key)
             page.mrma._revealed_fields.discard(field_key)
         except Exception as ex:
-            show_snack(page, f"Could not delete: {ex}", "red")
+            show_snack(page, f"Could not delete: {ex}", ft.Colors.RED)
             return
             
         row_ref   = getattr(page.mrma, "_delete_inline_row",   None)
@@ -581,7 +581,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
 
         _close_delete()
         
-        show_snack(page, "Field deleted.", "green")
+        show_snack(page, "Field deleted.", ft.Colors.GREEN)
 
     page.mrma._delete_field_dlg = ft.AlertDialog(
         modal=False,
@@ -620,7 +620,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
     def _do_add(_e=None):
         label = (page.mrma._add_field_label_tf.value or "").strip()
         if not label:
-            show_snack(page, "Field label is required.", "red")
+            show_snack(page, "Field label is required.", ft.Colors.RED)
             return
         category = (page.mrma._add_field_category_dd.value or "Other").strip() or "Other"
         data_type = detect_data_type_from_label(label)
@@ -630,12 +630,12 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
         try:
             ensure_field_definition(page.db_connection, key, label, data_type=data_type, category=category, is_sensitive=is_sensitive)
         except Exception as ex:
-            show_snack(page, f"Could not add field: {ex}", "red")
+            show_snack(page, f"Could not add field: {ex}", ft.Colors.RED)
             return
 
         _close_add()
         page.mrma._patient_info_refresh_callback()
-        show_snack(page, "Field added.", "green")
+        show_snack(page, "Field added.", ft.Colors.GREEN)
 
     page.mrma._add_field_label_tf.on_submit = _do_add
 
@@ -710,7 +710,7 @@ def ensure_patient_info_dialogs(page: ft.Page, refresh_callback):
 
         _close_bulk()
         page.mrma._patient_info_refresh_callback()
-        show_snack(page, "Sensitivity settings updated.", "green")
+        show_snack(page, "Sensitivity settings updated.", ft.Colors.GREEN)
 
     # CREATE THE DIALOG ONCE
     page.mrma._bulk_edit_dlg = ft.AlertDialog(

@@ -254,7 +254,7 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
     suggestions = fetch_pending_suggestions(conn, patient_id)
     
     if not suggestions:
-        show_snack(page, "No pending AI suggestions.", "green")
+        show_snack(page, "No pending AI suggestions.", ft.Colors.GREEN)
         if on_close: on_close()
         return
 
@@ -298,12 +298,9 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
         try:
             refresh_fn = getattr(page.mrma, "_refresh_overview_review_btn", None)
             if refresh_fn:
-                print("Calling refresh_fn!")
                 refresh_fn()
-            else:
-                print("refresh_fn not found!")
-        except Exception as e:
-            print(f"Error in _update_badge: {e}")
+        except Exception:
+            pass
 
     def refresh_list():
         list_view.controls.clear()
@@ -328,13 +325,13 @@ def show_ai_review_dialog(page: ft.Page, patient_id: int, on_close=None):
                     from database import get_profile
                     page.current_profile = get_profile(conn)
                     
-                show_snack(page, f"Accepted {sg['field_key']}", "green")
+                show_snack(page, f"Accepted {sg['field_key']}", ft.Colors.GREEN)
                 _update_badge()
                 refresh_list()
                 
             def reject_click(e, sg=s):
                 mark_suggestion(conn, sg["id"], "rejected")
-                show_snack(page, f"Rejected {sg['field_key']}", "orange")
+                show_snack(page, f"Rejected {sg['field_key']}", ft.Colors.ORANGE)
                 _update_badge()
                 refresh_list()
 

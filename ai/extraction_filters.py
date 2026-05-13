@@ -431,6 +431,69 @@ def post_process(
                             val = item["value"]
                             break
 
+        # R4b. Medications -> Route: also rescue route terms from notes field
+        if fk == "medicationstatement.current_list" and parsed:
+            notes = str(parsed.get("notes", "")).strip()
+            notes_lower = notes.lower()
+            if notes_lower and not parsed.get("route"):
+                _ROUTE_TERMS_NOTES = (
+                    "oral", "subcutaneous", "intramuscular", "intravenous",
+                    "topical", "sublingual", "rectal", "ophthalmic", "otic", "nasal",
+                    "inhaled", "inhalation", "transdermal", "by mouth",
+                )
+                for rt in _ROUTE_TERMS_NOTES:
+                    if rt in notes_lower:
+                        parsed["route"] = rt.capitalize()
+                        # Remove the route term from notes
+                        parsed["notes"] = re.sub(
+                            rf'\b{re.escape(rt)}\b', '', notes, flags=re.IGNORECASE
+                        ).strip().strip(",").strip()
+                        item["value"] = json.dumps(parsed)
+                        val = item["value"]
+                        break
+
+        # R5. Medications -> Shorthand normalization: expand abbreviations
+        # to plain English (e.g. "bid" → "Twice daily", "PO" → "By mouth")
+        if fk == "medicationstatement.current_list" and parsed:
+            from utils.medical_abbreviations import normalize_medical_shorthand
+            _changed = False
+            for _mf in ("frequency", "route", "dose"):
+                _mval = str(parsed.get(_mf, "")).strip()
+                if _mval:
+                    _normalized = normalize_medical_shorthand(_mval)
+                    if _normalized != _mval:
+                        parsed[_mf] = _normalized
+                        _changed = True
+            if _changed:
+                item["value"] = json.dumps(parsed)
+                val = item["value"]
+
+        # R6. Medications -> Name cleanup: strip dose/strength from the name
+        # when the LLM puts "Lisinopril 10mg" in name instead of just "Lisinopril"
+        if fk == "medicationstatement.current_list" and parsed:
+            med_name = str(parsed.get("name", "")).strip()
+            if med_name:
+                # Match trailing dose patterns:
+                # "Lisinopril 10mg", "Metformin 500 mg", "Amoxicillin 250mg/5ml",
+                # "Ibuprofen 200 mg tablet", "Aspirin 81mg"
+                _dose_pattern = re.compile(
+                    r'\s+(\d+\.?\d*\s*(?:mg|mcg|ml|mL|meq|iu|g|%|units?)'
+                    r'(?:\s*/\s*\d+\.?\d*\s*(?:mg|mcg|ml|mL|meq|iu|g|%|units?))?'
+                    r'(?:\s+(?:tablet|tablets|tab|capsule|capsules|cap|oral|solution|suspension))?)$',
+                    re.IGNORECASE,
+                )
+                _dose_match = _dose_pattern.search(med_name)
+                if _dose_match:
+                    extracted_dose = _dose_match.group(1).strip()
+                    cleaned_name = med_name[:_dose_match.start()].strip()
+                    if cleaned_name:  # safety: don't blank the name
+                        parsed["name"] = cleaned_name
+                        # If dose field is empty, move the extracted dose there
+                        if not str(parsed.get("dose", "")).strip():
+                            parsed["dose"] = extracted_dose
+                        item["value"] = json.dumps(parsed)
+                        val = item["value"]
+
         # --- Standard filters ---
 
         # 3. Reject if the primary value is an empty phrase
@@ -441,6 +504,13 @@ def post_process(
                 parsed.get("immunization") or parsed.get("payer") or
                 parsed.get("relation") or ""
             )
+            
+            # Reject exact hallucinated placeholders from prompt examples
+            if str(primary_val).strip().lower() in ("john doe", "jane doe", "yyyy-mm-dd"):
+                continue
+            if str(parsed.get("date", "")).strip() in ("2023-01-01", "YYYY-MM-DD", "19xx", "20xx"):
+                continue
+
             if _is_empty_phrase(str(primary_val).strip()):
                 continue
             meaningful_count = 0
@@ -463,10 +533,56 @@ def post_process(
             vital_value = str(parsed.get("value", parsed.get("value_text", ""))).strip()
             if _is_empty_phrase(vital_value):
                 continue
-            # Clear flag if no reference range is provided (e.g. BMI "Normal")
+            # Blood pressure must have systolic/diastolic (e.g. "120/80")
+            if "blood pressure" in vital_name or "bp" == vital_name:
+                if "/" not in vital_value:
+                    continue  # reject systolic-only readings
+            # Screening scores (PHQ-9, GAD-7, AUDIT-C): validate that the
+            # value is a valid integer within the known scoring range.
+            # Also require high confidence (>=0.90) since screening scores
+            # are the most commonly hallucinated category — an explicitly
+            # documented score like "PHQ-9: 14" yields high confidence,
+            # while fabricated defaults (e.g. 0) tend to be lower.
+            _SCREENING_RANGES = {
+                "phq": (0, 27), "gad": (0, 21), "audit": (0, 40),
+            }
+            _is_screening = False
+            for prefix, (lo, hi) in _SCREENING_RANGES.items():
+                if prefix in vital_name:
+                    _is_screening = True
+                    try:
+                        score_val = int(vital_value)
+                    except (ValueError, TypeError):
+                        score_val = -1  # force rejection
+                    if score_val < lo or score_val > hi:
+                        break  # reject
+                    break  # valid — stop checking prefixes
+            else:
+                _is_screening = False  # no prefix matched
+            if _is_screening:
+                if score_val < lo or score_val > hi:
+                    continue
+                # Require high confidence to prevent hallucinated scores
+                try:
+                    item_conf = float(item.get("confidence", 0))
+                except (ValueError, TypeError):
+                    item_conf = 0.0
+                if item_conf < 0.90:
+                    continue
+            # Clear noise flags (e.g. BMI "Normal") — keep "abnormal" since
+            # it carries real clinical meaning (e.g. bradycardia, tachycardia)
             vflag = str(parsed.get("abnormal_flag", "")).strip().lower()
-            if vflag in ("normal", "abnormal", "n"):
+            if vflag in ("normal", "n"):
                 parsed["abnormal_flag"] = ""
+                item["value"] = json.dumps(parsed)
+                val = item["value"]
+
+            # 4b. Normalize weight/height/temperature to canonical metric units
+            # so dedup works correctly across documents using different systems.
+            vital_name = str(parsed.get("name", "")).strip().lower()
+            if vital_name in ("weight", "height", "temperature"):
+                from utils.unit_conversion import normalize_vital_to_metric
+                parsed = normalize_vital_to_metric(parsed)
                 item["value"] = json.dumps(parsed)
                 val = item["value"]
 
@@ -481,10 +597,10 @@ def post_process(
             if any(result_lower.startswith(ot) for ot in _ORDER_ONLY_TERMS):
                 continue
             
-            # Clear flag if no reference range is provided
+            # Clear noise flags when no reference range is provided
             flag = str(parsed.get("abnormal_flag", "")).strip().lower()
             ref = str(parsed.get("ref_range_text", parsed.get("reference_range", ""))).strip()
-            if flag in ("normal", "abnormal", "n") and not ref:
+            if flag in ("normal", "n") and not ref:
                 parsed["abnormal_flag"] = ""
                 item["value"] = json.dumps(parsed)
                 val = item["value"]
@@ -500,13 +616,38 @@ def post_process(
             if not imm_name or not any(vk in imm_name for vk in _VACCINE_KEYWORDS):
                 continue
 
-        # 7. Insurance: reject MRNs or hospital names
+        # 7. Insurance: reject MRNs, hospital names, placeholders, and provider misclassifications
         if fk == "insurance.list" and parsed:
             payer = str(parsed.get("payer", "")).strip().lower()
+            member_id = str(parsed.get("member_id", "")).strip()
+            group_no = str(parsed.get("group_no", "")).strip()
+            ins_phone = str(parsed.get("phone", "")).strip()
+            ins_notes = str(parsed.get("notes", "")).strip().lower()
             if _is_empty_phrase(payer):
                 continue
-            if any(term in payer for term in ("hospital", "medical center",
-                                               "medical record", "mrn")):
+            # Reject hospital/provider names misclassified as insurance payers
+            _PROVIDER_TERMS = (
+                "hospital", "medical center", "medical record", "mrn",
+                "clinic", "health system", "health center", "primary",
+                "physician", "associates", "specialists",
+            )
+            if any(term in payer for term in _PROVIDER_TERMS):
+                continue
+            # Reject common placeholder / hallucinated values
+            _PLACEHOLDER_IDS = ("123456789", "000000000", "999999999", "12345", "00000")
+            _PLACEHOLDER_PHONES = ("555-555-5555", "5555555555", "000-000-0000")
+            if member_id in _PLACEHOLDER_IDS or group_no in _PLACEHOLDER_IDS:
+                continue
+            if ins_phone in _PLACEHOLDER_PHONES:
+                parsed["phone"] = ""
+                item["value"] = json.dumps(parsed)
+                val = item["value"]
+            # Reject if notes contain clinical diagnoses (not insurance info)
+            _CLINICAL_NOTE_TERMS = (
+                "diagnosis", "dx:", "icd", "presenting",
+                "dysuria", "hypertension", "diabetes", "anxiety",
+            )
+            if any(ct in ins_notes for ct in _CLINICAL_NOTE_TERMS):
                 continue
 
         # 8. Patient address: must contain a digit

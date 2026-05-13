@@ -86,11 +86,11 @@ def _ensure_add_request_dialog(page: ft.Page, on_saved: callable) -> ft.AlertDia
                 source,
                 notes,
             )
-            show_snack(page, "Request added.", "green")
+            show_snack(page, "Request added.", ft.Colors.GREEN)
             _close()
             on_saved()
         except Exception as ex:
-            show_snack(page, f"Error saving request: {ex}", "red")
+            show_snack(page, f"Error saving request: {ex}", ft.Colors.RED)
 
     page.mrma._add_req_dlg = ft.AlertDialog(
         modal=True,

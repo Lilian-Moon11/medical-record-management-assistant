@@ -177,39 +177,8 @@ def _inline_date_row(
     def _open_source_doc(_e=None):
         if not source_doc_id:
             return
-        import asyncio, tempfile, os as _os
-        from crypto.file_crypto import get_or_create_file_master_key, decrypt_bytes
-
-        async def _do_open():
-            try:
-                cur = page.db_connection.cursor()
-                cur.execute(
-                    "SELECT file_name, file_path FROM documents WHERE id=?",
-                    (source_doc_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    show_snack(page, "Source document not found.", "red")
-                    return
-                human_name, enc_path = row
-                fmk = get_or_create_file_master_key(page.db_connection, dmk_raw=page.db_key_raw)
-                from core.paths import resolve_doc_path
-                resolved = str(resolve_doc_path(enc_path))
-                with open(resolved, "rb") as _f:
-                    ciphertext = _f.read()
-                plaintext = decrypt_bytes(fmk, ciphertext)
-                _, ext = _os.path.splitext(human_name)
-                fd, tmp = tempfile.mkstemp(suffix=ext or ".pdf")
-                try:
-                    _os.write(fd, plaintext)
-                finally:
-                    _os.close(fd)
-                from utils.open_file import open_file_cross_platform
-                open_file_cross_platform(tmp)
-            except Exception as ex:
-                show_snack(page, f"Could not open document: {ex}", "red")
-
-        asyncio.create_task(_do_open())
+        from utils.open_file import decrypt_and_open_document
+        decrypt_and_open_document(page, doc_id=source_doc_id)
 
     source_icon_btn = ft.IconButton(
         icon=ft.Icons.ARTICLE_OUTLINED,
@@ -520,9 +489,9 @@ def get_overview_view(page: ft.Page):
                 notes_input.value,
             )
             page.current_profile = get_profile(page.db_connection)
-            show_snack(page, "Notes saved successfully.", "green")
+            show_snack(page, "Notes saved successfully.", ft.Colors.GREEN)
         except Exception as ex:
-            show_snack(page, f"Error saving notes: {ex}", "red")
+            show_snack(page, f"Error saving notes: {ex}", ft.Colors.RED)
 
     notes_section = themed_panel(
         page,
@@ -571,10 +540,10 @@ def get_overview_view(page: ft.Page):
                     "family_history": page.mrma._summary_opt_fam.value,
                 }
                 path = generate_summary_pdf(page.db_connection, patient[0], options=opts)
-                show_snack(page, "PDF Generated!", "green")
+                show_snack(page, "PDF Generated!", ft.Colors.GREEN)
                 open_file_cross_platform(path)
             except Exception as ex:
-                show_snack(page, f"PDF Error: {ex}", "red")
+                show_snack(page, f"PDF Error: {ex}", ft.Colors.RED)
 
         def _close_dlg(e):
             page.mrma._summary_options_dlg.open = False
@@ -753,13 +722,32 @@ def _create_profile_ui(page: ft.Page):
     """Sub-view: Shown ONLY if the database is empty (first run)."""
     name_input  = ft.TextField(label="Full Name", autofocus=True)
     dob_input   = ft.TextField(label="Date of Birth (YYYY-MM-DD)")
+    units_dd    = ft.Dropdown(
+        label="Measurement System",
+        width=300,
+        options=[
+            ft.dropdown.Option("imperial", "Imperial (lbs, ft/in, °F)"),
+            ft.dropdown.Option("metric", "Metric (kg, cm, °C)"),
+        ],
+        value="imperial",
+    )
+    from utils.date_format import FORMAT_OPTIONS, DEFAULT_FORMAT
+    date_dd = ft.Dropdown(
+        label="Date Format",
+        width=300,
+        options=[ft.dropdown.Option(key, label) for key, label in FORMAT_OPTIONS],
+        value=DEFAULT_FORMAT,
+    )
     notes_input = ft.TextField(label="Initial Medical Notes", multiline=True, min_lines=3)
 
     def do_create(e):
         if not name_input.value:
-            return show_snack(page, "Name is required to create a profile.", "red")
+            return show_snack(page, "Name is required to create a profile.", ft.Colors.RED)
         from database.patient import create_profile
+        from database import set_setting
         create_profile(page.db_connection, name_input.value, dob_input.value, notes_input.value)
+        set_setting(page.db_connection, "units.measurement_system", units_dd.value or "imperial")
+        set_setting(page.db_connection, "units.date_format", date_dd.value or DEFAULT_FORMAT)
         page.current_profile = get_profile(page.db_connection)
         page.content_area.content = get_overview_view(page)
         page.content_area.update()
@@ -773,6 +761,8 @@ def _create_profile_ui(page: ft.Page):
             ft.Divider(),
             name_input,
             dob_input,
+            units_dd,
+            date_dd,
             notes_input,
             ft.FilledButton("Create Profile", icon=ft.Icons.SAVE, on_click=do_create),
         ], spacing=pt_scale(page, 20)),

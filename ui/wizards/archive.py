@@ -75,11 +75,11 @@ def archive_to_records(
             (patient_id, doc_id, str(doc_id), display_name),
         )
         page.db_connection.commit()
-        show_snack(page, "Form securely archived.", "blue")
+        show_snack(page, "Form securely archived.", ft.Colors.BLUE)
         return doc_id
     except Exception as db_ex:
         logger.error("Archive error: %s", db_ex)
-        show_snack(page, "Archive failed, check data folder.", "orange")
+        show_snack(page, "Archive failed, check data folder.", ft.Colors.ORANGE)
         return None
 
 

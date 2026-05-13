@@ -113,7 +113,7 @@ def _extract_single_chunk(text_chunk: str, llm) -> list[dict]:
     try:
         raw = llm.complete(prompt).text
         raw = str(raw).strip()
-        print(f"[AI-DIAG] LLM raw output ({len(text_chunk)} chars input): {raw[:500]}...")
+        logger.debug("LLM raw output (%d chars input): %s...", len(text_chunk), raw[:500])
 
         # Strip markdown code fences that the LLM likes to add (```json ... ```)
         raw = re.sub(r"```(?:json)?\s*", "", raw).strip()
@@ -122,7 +122,7 @@ def _extract_single_chunk(text_chunk: str, llm) -> list[dict]:
         # Also accept arrays of stringified objects like '["{...}", "{...}"]'
         match = re.search(r'\[\s*[{\"]', raw)
         if not match:
-            print(f"[AI-DIAG] No JSON array found in LLM output")
+            logger.debug("No JSON array found in LLM output")
             return []
             
         raw = raw[match.start():]
@@ -154,11 +154,11 @@ def _extract_single_chunk(text_chunk: str, llm) -> list[dict]:
                 salvaged = raw[:pos + 1] + "]"
                 candidates = try_parse(salvaged)
                 if candidates is not None:
-                    print(f"[AI-DIAG] Recovered truncated JSON ({pos + 1} chars salvaged)")
+                    logger.debug("Recovered truncated JSON (%d chars salvaged)", pos + 1)
                     break
 
         if candidates is None:
-            print(f"[AI-DIAG] JSON parse failed for chunk")
+            logger.debug("JSON parse failed for chunk")
             return []
 
         if not isinstance(candidates, list):
@@ -185,8 +185,7 @@ def _extract_single_chunk(text_chunk: str, llm) -> list[dict]:
         return valid_candidates
 
     except Exception as exc:
-        print(f"[AI-DIAG] Chunk extraction error: {exc}")
-        logger.warning("Chunk extraction failed: %s", exc)
+        logger.warning("Chunk extraction error: %s", exc)
         return []
 
 
@@ -244,7 +243,7 @@ def extract_fields(
 
     # Split into chunks that fit the model's context window
     chunks = _split_into_chunks(text)
-    print(f"[AI-DIAG] Document split into {len(chunks)} chunks ({len(text)} total chars)")
+    logger.debug("Document split into %d chunks (%d total chars)", len(chunks), len(text))
 
     # Load any previously cached chunk results (for resumability)
     cached_chunks: dict[int, list[dict]] = {}
@@ -261,7 +260,7 @@ def extract_fields(
                 except Exception:
                     pass
             if cached_chunks:
-                print(f"[AI-DIAG] Resuming: {len(cached_chunks)} chunks already cached")
+                logger.debug("Resuming: %d chunks already cached", len(cached_chunks))
         except Exception:
             pass  # table might not exist yet on first run
 
@@ -270,11 +269,11 @@ def extract_fields(
     for i, chunk in enumerate(chunks):
         if i in cached_chunks:
             chunk_candidates = cached_chunks[i]
-            print(f"[AI-DIAG] Chunk {i+1}/{len(chunks)} loaded from cache ({len(chunk_candidates)} candidates)")
+            logger.debug("Chunk %d/%d loaded from cache (%d candidates)", i+1, len(chunks), len(chunk_candidates))
         else:
-            print(f"[AI-DIAG] Processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)")
+            logger.debug("Processing chunk %d/%d (%d chars)", i+1, len(chunks), len(chunk))
             chunk_candidates = _extract_single_chunk(chunk, llm)
-            print(f"[AI-DIAG] Chunk {i+1} produced {len(chunk_candidates)} raw candidates")
+            logger.debug("Chunk %d produced %d raw candidates", i+1, len(chunk_candidates))
 
             # Cache the result immediately for resumability
             if doc_id is not None and chunk_candidates:
@@ -290,7 +289,7 @@ def extract_fields(
 
         all_candidates.extend(chunk_candidates)
 
-    print(f"[AI-DIAG] Total raw candidates from all chunks: {len(all_candidates)}")
+    logger.debug("Total raw candidates from all chunks: %d", len(all_candidates))
 
     # Clean up chunk cache now that all chunks are done
     if doc_id is not None:
@@ -305,11 +304,11 @@ def extract_fields(
 
     # Explode list items and deduplicate across all chunks
     candidates = explode_and_deduplicate(all_candidates)
-    print(f"[AI-DIAG] After deduplication: {len(candidates)} unique candidates")
+    logger.debug("After deduplication: %d unique candidates", len(candidates))
 
     # Post-processing: clean up misclassifications and noise
     candidates = post_process(candidates, chunk_item_counts, len(chunks))
-    print(f"[AI-DIAG] After post-processing filters: {len(candidates)} candidates")
+    logger.debug("After post-processing filters: %d candidates", len(candidates))
 
     # Fetch existing user-entered values for conflict detection
     cur = conn.cursor()

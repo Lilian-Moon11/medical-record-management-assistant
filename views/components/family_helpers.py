@@ -86,7 +86,7 @@ def _save_items(page: ft.Page, patient_id: int, items: list[dict]):
             page.db_connection, patient_id, _FIELD_KEY, json.dumps(items), "user"
         )
     except Exception as ex:
-        show_snack(page, f"Save failed: {ex}", "red")
+        show_snack(page, f"Save failed: {ex}", ft.Colors.RED)
 
 
 def _group_by_relation(items: list[dict]) -> dict[str, list[tuple[str, list[dict]]]]:
@@ -151,4 +151,4 @@ def _save_social(page: ft.Page, patient_id: int, items: list[dict]):
             json.dumps(items), "user",
         )
     except Exception as ex:
-        show_snack(page, f"Save failed: {ex}", "red")
+        show_snack(page, f"Save failed: {ex}", ft.Colors.RED)

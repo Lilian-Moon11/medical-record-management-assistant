@@ -144,11 +144,11 @@ class PaperworkWizard:
         picked = files[0]
         src_path = getattr(picked, "path", None) or getattr(picked, "file_path", None)
         if not src_path:
-            show_snack(self.page, "Picker returned no local path.", "red")
+            show_snack(self.page, "Picker returned no local path.", ft.Colors.RED)
             return
 
         self.template_path = src_path
-        show_snack(self.page, f"Template Loaded: {picked.name}", "blue")
+        show_snack(self.page, f"Template Loaded: {picked.name}", ft.Colors.BLUE)
 
         # Persist current radio selection across re-render
         if hasattr(self, "form_radio") and self.form_radio:
@@ -331,10 +331,10 @@ class PaperworkWizard:
                 self.selected_type = self.form_radio.value or self.selected_type
 
             if not self.selected_type:
-                show_snack(self.page, "Select a form type.", "orange")
+                show_snack(self.page, "Select a form type.", ft.Colors.ORANGE)
                 return
             if not self.template_path:
-                show_snack(self.page, "Please upload a blank PDF template.", "orange")
+                show_snack(self.page, "Please upload a blank PDF template.", ft.Colors.ORANGE)
                 return
 
             self.step = 2
@@ -476,12 +476,12 @@ class PaperworkWizard:
 
             # --- 6. Success & Cleanup ---
             if output_path:
-                show_snack(self.page, "PDF(s) generated in Downloads.", "green")
+                show_snack(self.page, "PDF(s) generated in Downloads.", ft.Colors.GREEN)
                 open_file_cross_platform(output_path)
             elif self.save_to_db_check.value:
-                show_snack(self.page, "Form archived to Patient Records.", "green")
+                show_snack(self.page, "Form archived to Patient Records.", ft.Colors.GREEN)
             else:
-                show_snack(self.page, "No output versions selected.", "orange")
+                show_snack(self.page, "No output versions selected.", ft.Colors.ORANGE)
 
             # --- 7. Records Request Tracker hook (ROI only) ---
             if self.selected_type == "roi":
@@ -498,7 +498,7 @@ class PaperworkWizard:
 
         except Exception as ex:
             logger.error("PDF generation error: %s", ex, exc_info=True)
-            show_snack(self.page, f"Error: {ex}", "red")
+            show_snack(self.page, f"Error: {ex}", ft.Colors.RED)
             self.next_btn.disabled = False
             self.next_btn.text = "Generate & Save"
             self.page.update()
@@ -647,7 +647,7 @@ class PaperworkWizard:
             static_out = os.path.join(download_dir, f"{form_prefix}_Draft_{timestamp}.pdf")
             with open(static_out, "wb") as f:
                 f.write(static_bytes)
-            show_snack(self.page, "No fields matched. Blank draft saved to Downloads.", "orange")
+            show_snack(self.page, "No fields matched. Blank draft saved to Downloads.", ft.Colors.ORANGE)
             open_file_cross_platform(static_out)
             self.close()
             self._cleanup_sig(sig_path)
@@ -665,7 +665,7 @@ class PaperworkWizard:
                 with open(static_out, "wb") as f:
                     f.write(final_bytes)
             except Exception as write_ex:
-                show_snack(self.page, f"Save error: {write_ex}", "red")
+                show_snack(self.page, f"Save error: {write_ex}", ft.Colors.RED)
                 return
 
             if self.save_to_db_check.value:
